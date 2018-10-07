@@ -1,0 +1,7 @@
+[package]
+name = "space_invaders"
+version = "0.1.0"
+authors = ["Mitch Labrenz <mslabrenz@gmail.com>"]
+edition = "2018"
+
+[dependencies]
