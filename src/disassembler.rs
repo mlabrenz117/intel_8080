@@ -1,6 +1,7 @@
-mod instruction;
-use self::instruction::{Instruction, Opcode, OpcodeSize};
+pub mod instruction;
+pub use self::instruction::{Instruction, Opcode, OpcodeSize};
 
+#[derive(Debug)]
 pub struct Disassembler<'a> {
     pc: usize,
     buf: &'a [u8],

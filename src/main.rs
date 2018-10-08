@@ -1,17 +1,40 @@
+use std::{fs::File, io, io::prelude::*};
+#[macro_use]
+extern crate failure;
+
+mod cpu8080;
 mod disassembler;
 
-use self::disassembler::Disassembler;
+use self::cpu8080::Cpu8080;
 
-fn main() {
-    let buf = [
-        0x00, 0x00, 0x00, 0xC3, 0xD4, 0x18, 0x00, 0x00, 0xF5, 0xC5, 0xD5, 0xE5, 0xC3, 0x8C, 0x00,
-        0x00, 0xF5, 0xC5, 0xD5, 0xE5, 0x3E, 0x80, 0x32, 0x72, 0x20, 0x21, 0xC0, 0x20, 0x35, 0xCD,
-        0xCD, 0x17,
-    ];
+fn main() -> io::Result<()> {
+    let mut f = File::open("resources/invaders.rom")?;
+    let mut str_buf = String::new();
+    let mut buf = [0 as u8; 0x2000];
 
-    let disassembler = Disassembler::new(&buf);
+    f.read_to_string(&mut str_buf)?;
 
-    for instruction in disassembler {
-        println!("{}", instruction);
+    let mut idx = 0;
+    let lines = str_buf.lines();
+    for line in lines {
+        let mut line = line.to_string();
+        line.pop();
+        for byte in line.split(',') {
+            if byte.len() == 4 {
+                let b: u8 = u8::from_str_radix(&byte[2..], 16).unwrap();
+                buf[idx] = b;
+                idx += 1;
+            }
+        }
     }
+
+    let cpu = Cpu8080::new(&buf);
+    let dis = self::disassembler::Disassembler::new(&buf);
+
+    let mut line: usize = 0x00;
+    for instruction in dis {
+        println!("{:04x} {}", line, instruction);
+        line += 1;
+    }
+    Ok(())
 }

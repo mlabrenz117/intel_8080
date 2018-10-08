@@ -1,50 +1,80 @@
+use crate::cpu8080::Register;
 use std::fmt::Display;
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum Instruction {
-    Unary { opcode: Opcode },
-    Binary { opcode: Opcode, data: u8 },
-    Trinary { opcode: Opcode, addr: u16 },
+pub struct Instruction {
+    opcode: Opcode,
+    params: InstructionParams,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum InstructionParams {
+    Unary,
+    Binary(u8),
+    Trinary(u16),
 }
 
 impl Instruction {
     pub fn new_unary(opcode: Opcode) -> Instruction {
-        Instruction::Unary { opcode }
+        Instruction {
+            opcode,
+            params: InstructionParams::Unary,
+        }
     }
 
     pub fn new_binary(opcode: Opcode, data: u8) -> Instruction {
-        Instruction::Binary { opcode, data }
+        Instruction {
+            opcode,
+            params: InstructionParams::Binary(data),
+        }
     }
 
     pub fn new_trinary(opcode: Opcode, addr: u16) -> Instruction {
-        Instruction::Trinary { opcode, addr }
+        Instruction {
+            opcode,
+            params: InstructionParams::Trinary(addr),
+        }
+    }
+
+    pub fn opcode(&self) -> Opcode {
+        self.opcode
+    }
+
+    pub fn binary_params(&self) -> Option<u8> {
+        self.params.binary_params()
+    }
+
+    pub fn trinary_params(&self) -> Option<u16> {
+        self.params.trinary_params()
+    }
+}
+
+impl InstructionParams {
+    fn binary_params(&self) -> Option<u8> {
+        match self {
+            InstructionParams::Binary(param) => Some(*param),
+            _ => None,
+        }
+    }
+
+    fn trinary_params(&self) -> Option<u16> {
+        match self {
+            InstructionParams::Trinary(param) => Some(*param),
+            _ => None,
+        }
     }
 }
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Instruction::Unary { opcode } => write!(f, "{:?}", opcode),
-            Instruction::Binary { opcode, data } => write!(f, "{:?} :: {:02x}", opcode, data),
-            Instruction::Trinary { opcode, addr } => write!(f, "{:?} :: {:04x}", opcode, addr),
+        match self.params {
+            InstructionParams::Unary => write!(f, "{:?}", self.opcode),
+            InstructionParams::Binary(data) => write!(f, "{:?} :: {:02x}", self.opcode, data),
+            InstructionParams::Trinary(addr) => write!(f, "{:?} :: {:04x}", self.opcode, addr),
         }
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum Register {
-    A,
-    B,
-    C,
-    D,
-    E,
-    H,
-    L,
-    M,
-    SP,
-}
-
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Opcode {
     NOP,
     LXI(Register),
@@ -381,7 +411,11 @@ impl From<u8> for Opcode {
             0xfe => CPI,
             0xff => RST(7),
             // Opcodes unimplemented by 8080 instruction set.
-            _ => unimplemented!(),
+            _a => {
+                //let s = format!("{:x} is unimplemented", _a);
+                //unimplemented!("{}", &s);
+                NOP
+            }
         }
     }
 }
@@ -429,7 +463,7 @@ impl Opcode {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum OpcodeSize {
     Unary,
     Binary,
