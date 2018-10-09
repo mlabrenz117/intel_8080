@@ -13,6 +13,20 @@ impl<'a> Disassembler<'a> {
     }
 }
 
+impl<'a> Disassembler<'a> {
+    pub fn update_pc(&mut self, addr: u16) {
+        self.pc = addr as usize;
+    }
+
+    pub fn pc(&self) -> u16 {
+        self.pc as u16
+    }
+
+    pub fn value_at(&self, addr: u16) -> u8 {
+        self.buf[addr as usize]
+    }
+}
+
 impl<'a> Iterator for Disassembler<'a> {
     type Item = Instruction;
 

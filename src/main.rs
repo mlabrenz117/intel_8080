@@ -1,4 +1,4 @@
-use std::{fs::File, io, io::prelude::*};
+use std::{fs::File, io::prelude::*};
 #[macro_use]
 extern crate failure;
 
@@ -7,7 +7,7 @@ mod disassembler;
 
 use self::cpu8080::Cpu8080;
 
-fn main() -> io::Result<()> {
+fn main() -> Result<(), failure::Error> {
     let mut f = File::open("resources/invaders.rom")?;
     let mut str_buf = String::new();
     let mut buf = [0 as u8; 0x2000];
@@ -28,13 +28,13 @@ fn main() -> io::Result<()> {
         }
     }
 
-    let cpu = Cpu8080::new(&buf);
-    let dis = self::disassembler::Disassembler::new(&buf);
+    let mut cpu = Cpu8080::new(&buf);
+    cpu.start()
+    //let dis = self::disassembler::Disassembler::new(&buf);
 
-    let mut line: usize = 0x00;
-    for instruction in dis {
-        println!("{:04x} {}", line, instruction);
-        line += 1;
-    }
-    Ok(())
+    //let mut line: usize = 0x00;
+    //for instruction in dis {
+    //    println!("{:04x} {}", line, instruction);
+    //    line += 1;
+    //}
 }

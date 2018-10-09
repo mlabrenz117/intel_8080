@@ -1,6 +1,7 @@
 use crate::cpu8080::Register;
 use std::fmt::Display;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Instruction {
     opcode: Opcode,
     params: InstructionParams,

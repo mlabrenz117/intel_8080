@@ -1,4 +1,4 @@
-use super::{split_bytes, Cpu8080, Register};
+use super::{concat_bytes, split_bytes, Cpu8080, Register};
 use failure::Error;
 
 impl<'a> Cpu8080<'a> {
@@ -15,15 +15,47 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn mov(&mut self, destination: Register, source: Register) -> Result<(), Error> {
-        if destination == Register::SP || source == Register::SP {
-            bail!("Cannot move using SP register")
+    pub(super) fn ldax(&mut self, register: Register) -> Result<(), Error> {
+        let pair = match register {
+            Register::B | Register::D => register.get_pair().unwrap(),
+            _r => bail!("LDAX does not support register {:?}", register),
         };
-        if destination != Register::M && source != Register::M {
-            self.set_8bit_register(destination, self.get_8bit_register(source)?);
-        } else {
-            unimplemented!("Move the M register into 8 bit registers?")
+        let loc = concat_bytes(
+            self.get_8bit_register(register)?,
+            self.get_8bit_register(pair)?,
+        );
+        let value = self.get_mem_loc(loc);
+        self.set_8bit_register(Register::A, value);
+        Ok(())
+    }
+
+    pub(super) fn mov(&mut self, destination: Register, source: Register) -> Result<(), Error> {
+        match (destination, source) {
+            (Register::SP, _) | (_, Register::SP) => bail!("Cannot move using SP Register"),
+            (Register::M, _r) => {
+                let addr = concat_bytes(
+                    self.get_8bit_register(Register::H).unwrap(),
+                    self.get_8bit_register(Register::L).unwrap(),
+                );
+                self.set_mem_loc(addr, self.get_8bit_register(_r)?);
+            }
+            (_r, Register::M) => {
+                let addr = concat_bytes(
+                    self.get_8bit_register(Register::H).unwrap(),
+                    self.get_8bit_register(Register::L).unwrap(),
+                );
+                self.set_8bit_register(_r, self.get_mem_loc(addr));
+            }
+            (_r1, _r2) => self.set_8bit_register(_r1, self.get_8bit_register(_r2)?),
         }
+        Ok(())
+    }
+
+    pub(super) fn mvi(&mut self, register: Register, value: u8) -> Result<(), Error> {
+        if register == Register::SP || register == Register::A {
+            bail!("MVI cannot be used with SP or A Registers");
+        };
+        self.set_8bit_register(register, value);
         Ok(())
     }
 }
