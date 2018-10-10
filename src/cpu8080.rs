@@ -1,8 +1,8 @@
-use crate::disassembler::Disassembler;
-use crate::disassembler::{Instruction, Opcode};
+use crate::instruction::{read_bytes, Instruction, Opcode};
 use failure::Error;
 use std::fmt::{self, Display};
 
+// Instruction Implementations
 mod arithmetic;
 mod branch;
 mod data_transfer;
@@ -20,11 +20,13 @@ pub struct Cpu8080<'a> {
     h: u8,
     l: u8,
     sp: u16,
-    disassembler: Disassembler<'a>,
+    pc: u16,
+    rom: &'a [u8],
     memory: [u8; 0xffff],
     flags: ConditionalFlags,
     //int_enable: u8,
     rc: [bool; 8],
+    inst_cache: (Option<Instruction>, Option<Instruction>),
 }
 
 impl<'a> Cpu8080<'a> {
@@ -38,15 +40,18 @@ impl<'a> Cpu8080<'a> {
             h: 0,
             l: 0,
             sp: 0,
-            disassembler: Disassembler::new(buf),
+            pc: 0,
+            rom: buf,
             memory: [0; 0xffff],
             flags: ConditionalFlags::new(),
             //int_enable: 1,
             rc: [false; 8],
+            inst_cache: (None, None),
         }
     }
 
     fn emulate_instruction(&mut self, instruction: Instruction) -> Result<(), Error> {
+        println!("{:04x}: {}{}", self.pc, instruction, self);
         use self::Opcode::*;
         self.reset_rc();
         match instruction.opcode() {
@@ -116,33 +121,8 @@ impl<'a> Cpu8080<'a> {
     }
 
     pub fn start(&mut self) -> Result<(), Error> {
-        while let Some(instruction) = self.disassembler.next() {
-            let pc = self.disassembler.pc() - instruction.opcode().size().as_u16();
-            self.emulate_instruction(instruction)?;
-            println!("{:04x}: {}{}", pc, instruction, self);
-        }
-        Ok(())
-    }
-
-    pub fn run_num(&mut self, num: u64) -> Result<(), Error> {
-        let mut x = 0;
-        while let Some(instruction) = self.disassembler.next() {
-            if x > num {
-                break;
-            }
-            let pc = self.disassembler.pc() - instruction.opcode().size().as_u16();
-            self.emulate_instruction(instruction)?;
-            println!("{:04x}: {}{}", pc, instruction, self);
-            x += 1;
-        }
-        Ok(())
-    }
-
-    pub fn run_next(&mut self) -> Result<(), Error> {
-        if let Some(instruction) = self.disassembler.next() {
-            let pc = self.disassembler.pc() - instruction.opcode().size().as_u16();
-            self.emulate_instruction(instruction)?;
-            println!("{:04x}: {}{}", pc, instruction, self);
+        while let Some(result) = self.next() {
+            result?;
         }
         Ok(())
     }
@@ -178,14 +158,6 @@ impl<'a> Cpu8080<'a> {
         }
     }
 
-    fn set_mem_val(&mut self, value: u8) -> Result<(), Error> {
-        self.write_memory(self.m(), value)
-    }
-
-    fn get_mem_val(&self) -> u8 {
-        self.read_memory(self.m())
-    }
-
     fn m(&self) -> u16 {
         let high = self.get_8bit_register(Register::H).unwrap() as u16;
         let low = self.get_8bit_register(Register::L).unwrap() as u16;
@@ -201,10 +173,6 @@ impl<'a> Cpu8080<'a> {
     fn set_sp_register(&mut self, value: u16) {
         self.register_changed(Register::SP);
         self.sp = value;
-    }
-
-    fn get_sp_register(&self) -> u16 {
-        self.sp
     }
 
     fn push_u16(&mut self, value: u16) -> Result<(), Error> {
@@ -249,7 +217,7 @@ impl<'a> Cpu8080<'a> {
 
     fn read_memory(&self, addr: u16) -> u8 {
         match addr < 0x2000 {
-            true => self.disassembler.value_at(addr),
+            true => self.rom[addr as usize],
             false => {
                 let addr = addr - 0x2000;
                 self.memory[addr as usize]
@@ -288,6 +256,37 @@ impl<'a> Cpu8080<'a> {
     fn reset_rc(&mut self) {
         for i in self.rc.iter_mut() {
             *i = false;
+        }
+    }
+}
+
+impl<'a> Iterator for Cpu8080<'a> {
+    type Item = Result<(), Error>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pc as usize >= self.rom.len() {
+            return None;
+        }
+        match self.inst_cache {
+            (Some(c1), _) => {
+                self.inst_cache.0 = None;
+                self.pc += c1.len();
+                Some(self.emulate_instruction(c1))
+            }
+            (None, Some(c2)) => {
+                self.inst_cache.1 = None;
+                self.pc += c2.len();
+                Some(self.emulate_instruction(c2))
+            }
+            (_, _) => {
+                let end: usize = match self.rom.len() - (self.pc as usize) < 3 {
+                    true => self.rom.len(),
+                    false => self.pc as usize + 3,
+                };
+                let (instruction, cache1, cache2) = read_bytes(&self.rom[self.pc as usize..end]);
+                self.inst_cache = (cache1, cache2);
+                self.pc += instruction.len();
+                Some(self.emulate_instruction(instruction))
+            }
         }
     }
 }

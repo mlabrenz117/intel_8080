@@ -2,8 +2,8 @@ use std::{fs::File, io::prelude::*};
 #[macro_use]
 extern crate failure;
 
-mod cpu8080;
-mod disassembler;
+pub mod cpu8080;
+pub mod instruction;
 
 use self::cpu8080::Cpu8080;
 
@@ -29,12 +29,7 @@ fn main() -> Result<(), failure::Error> {
     }
 
     let mut cpu = Cpu8080::new(&buf);
-    cpu.start() //.run_num(1560)
-                //let dis = self::disassembler::Disassembler::new(&buf);
+    cpu.start()?;
 
-    //let mut line: usize = 0x00;
-    //for instruction in dis {
-    //    println!("{:04x} {}", line, instruction);
-    //    line += 1;
-    //}
+    Ok(())
 }

@@ -23,8 +23,8 @@ impl<'a> Cpu8080<'a> {
         let value = match register {
             Register::SP => bail!("DCR does not support SP Register"),
             Register::M => {
-                let (v, _c) = self.get_mem_val().complement_sub(1);
-                self.set_mem_val(v)?;
+                let (v, _c) = self.read_memory(self.m()).complement_sub(1);
+                self.write_memory(self.m(), v)?;
                 v
             }
             _r => {
@@ -91,7 +91,7 @@ impl<'a> Cpu8080<'a> {
             (_r, Some(r2)) => {
                 concat_bytes(self.get_8bit_register(_r)?, self.get_8bit_register(r2)?)
             }
-            (Register::SP, _) => self.get_sp_register(),
+            (Register::SP, _) => self.sp,
             (_, _) => bail!("Register unsupported: DAD"),
         };
         let (result, cy) = addend1.overflowing_add(addend2);

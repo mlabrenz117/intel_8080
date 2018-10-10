@@ -34,28 +34,5 @@ impl<'a> Iterator for Disassembler<'a> {
         if self.pc >= self.buf.len() {
             return None;
         }
-        let opcode = Opcode::from(self.buf[self.pc]);
-        match opcode.size() {
-            OpcodeSize::Binary => {
-                self.pc += 1;
-                let data: u8 = self.buf[self.pc];
-                self.pc += 1;
-                Some(Instruction::new_binary(opcode, data))
-            }
-            OpcodeSize::Trinary => {
-                self.pc += 1;
-                let data_low: u16 = self.buf[self.pc] as u16;
-                self.pc += 1;
-                let data_high: u16 = self.buf[self.pc] as u16;
-                let data_high = data_high << 8;
-                self.pc += 1;
-                let data: u16 = data_high + data_low;
-                Some(Instruction::new_trinary(opcode, data))
-            }
-            OpcodeSize::Unary => {
-                self.pc += 1;
-                Some(Instruction::new_unary(opcode))
-            }
-        }
     }
 }

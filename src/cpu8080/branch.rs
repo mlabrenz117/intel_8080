@@ -3,7 +3,7 @@ use failure::Error;
 
 impl<'a> Cpu8080<'a> {
     pub(super) fn jmp(&mut self, addr: u16) -> Result<(), Error> {
-        self.disassembler.update_pc(addr);
+        self.pc = addr;
         Ok(())
     }
 
@@ -15,14 +15,14 @@ impl<'a> Cpu8080<'a> {
     }
 
     pub(super) fn call(&mut self, addr: u16) -> Result<(), Error> {
-        self.push_u16(self.disassembler.pc())?;
-        self.disassembler.update_pc(addr);
+        self.push_u16(self.pc)?;
+        self.pc = addr;
         Ok(())
     }
 
     pub(super) fn ret(&mut self) -> Result<(), Error> {
         let addr = self.pop_u16()?;
-        self.disassembler.update_pc(addr);
+        self.pc = addr;
         Ok(())
     }
 }

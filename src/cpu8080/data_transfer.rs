@@ -172,9 +172,9 @@ mod tests {
         cpu.e = 0x01;
         cpu.memory[0x0000] = 0xaa;
         cpu.memory[0x0001] = 0xbb;
-        cpu.run_next().unwrap();
+        cpu.next().unwrap();
         assert_eq!(cpu.a, 0xaa);
-        cpu.run_next().unwrap();
+        cpu.next().unwrap();
         assert_eq!(cpu.a, 0xbb);
     }
 
@@ -190,11 +190,11 @@ mod tests {
         cpu.a = 0xaa;
         cpu.h = 0x20;
         cpu.memory[0x0000] = 0xcc;
-        cpu.run_next().unwrap();
+        cpu.next().unwrap();
         assert_eq!(cpu.b, 0xbd);
-        cpu.run_next().unwrap();
+        cpu.next().unwrap();
         assert_eq!(cpu.c, 0xcc);
-        cpu.run_next().unwrap();
+        cpu.next().unwrap();
         assert_eq!(cpu.memory[0x0000], 0xaa);
     }
 
