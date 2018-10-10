@@ -1,19 +1,6 @@
 use super::*;
 use failure::Error;
 
-trait TwosComplement<RHS = Self> {
-    type Output;
-    fn complement_sub(self, subtrahend: RHS) -> Self::Output;
-}
-
-impl TwosComplement for u8 {
-    type Output = (u8, bool);
-    fn complement_sub(self, subtrahend: Self) -> Self::Output {
-        let complement = !subtrahend + 1;
-        self.overflowing_add(complement)
-    }
-}
-
 impl<'a> Cpu8080<'a> {
     pub(super) fn inx(&mut self, register: Register) -> Result<(), Error> {
         if let Some(r2) = register.get_pair() {
@@ -33,11 +20,22 @@ impl<'a> Cpu8080<'a> {
     }
 
     pub(super) fn dcr(&mut self, register: Register) -> Result<(), Error> {
-        match register {
+        let value = match register {
             Register::SP => bail!("DCR does not support SP Register"),
-            Register::M => self.set_mem_val(self.get_mem_val() - 1),
-            _r => self.set_8bit_register(_r, self.get_8bit_register(_r).unwrap() - 1),
-        }
+            Register::M => {
+                let (v, _c) = self.get_mem_val().complement_sub(1);
+                self.set_mem_val(v)?;
+                v
+            }
+            _r => {
+                let (v, _c) = self.get_8bit_register(_r).unwrap().complement_sub(1);
+                self.set_8bit_register(_r, v);
+                v
+            }
+        };
+        self.flags.z = value == 0;
+        self.flags.s = value & 0x80 != 0;
+        self.flags.p = check_parity(value);
         Ok(())
     }
 
@@ -46,7 +44,7 @@ impl<'a> Cpu8080<'a> {
             Register::SP => bail!("Cannot ADD using SP Register"),
             Register::M => self
                 .get_8bit_register(Register::A)?
-                .overflowing_add(self.get_mem_loc(self.m())),
+                .overflowing_add(self.read_memory(self.m())),
             _r => self
                 .get_8bit_register(Register::A)?
                 .overflowing_add(self.get_8bit_register(_r)?),
@@ -87,12 +85,27 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
+    pub(super) fn dad(&mut self, reg: Register) -> Result<(), Error> {
+        let addend1 = self.m();
+        let addend2 = match (reg, reg.get_pair()) {
+            (_r, Some(r2)) => {
+                concat_bytes(self.get_8bit_register(_r)?, self.get_8bit_register(r2)?)
+            }
+            (Register::SP, _) => self.get_sp_register(),
+            (_, _) => bail!("Register unsupported: DAD"),
+        };
+        let (result, cy) = addend1.overflowing_add(addend2);
+        self.flags.cy = cy;
+        self.set_m(result);
+        Ok(())
+    }
+
     pub(super) fn sub(&mut self, register: Register) -> Result<(), Error> {
         let (result, cy) = match register {
             Register::SP => bail!("Cannot SUB using SP Register"),
             Register::M => self
                 .get_8bit_register(Register::A)?
-                .complement_sub(self.get_mem_loc(self.m())),
+                .complement_sub(self.read_memory(self.m())),
             _r => self
                 .get_8bit_register(Register::A)?
                 .complement_sub(self.get_8bit_register(_r)?),
@@ -100,7 +113,7 @@ impl<'a> Cpu8080<'a> {
 
         self.flags.z = result == 0;
         self.flags.s = result & 0x80 != 0;
-        self.flags.cy = !cy;
+        self.flags.cy = cy;
         self.flags.p = check_parity(result);
         self.set_8bit_register(Register::A, result);
         Ok(())
@@ -110,7 +123,7 @@ impl<'a> Cpu8080<'a> {
         let (result, cy) = self.get_8bit_register(Register::A)?.complement_sub(value);
         self.flags.z = result == 0;
         self.flags.s = result & 0x80 != 0;
-        self.flags.cy = !cy;
+        self.flags.cy = cy;
         self.flags.p = check_parity(result);
         self.set_8bit_register(Register::A, result);
         Ok(())
@@ -121,12 +134,17 @@ impl<'a> Cpu8080<'a> {
 mod tests {
     use super::*;
     use crate::cpu8080::{Cpu8080, Register};
+    use std::u8;
     #[test]
     fn overflow_sub() {
         let m: u8 = 0x3e;
         let s: u8 = 0x3e;
         let t = m.complement_sub(s);
-        assert_eq!(t, (0, true));
+        assert_eq!(t, (0, false));
+
+        let m: u8 = 0x00;
+        let s: u8 = 0x01;
+        assert_eq!(m.complement_sub(s), (u8::MAX, true));
     }
 
     #[test]

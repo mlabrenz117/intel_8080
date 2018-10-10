@@ -29,8 +29,8 @@ fn main() -> Result<(), failure::Error> {
     }
 
     let mut cpu = Cpu8080::new(&buf);
-    cpu.start()
-    //let dis = self::disassembler::Disassembler::new(&buf);
+    cpu.start() //.run_num(1560)
+                //let dis = self::disassembler::Disassembler::new(&buf);
 
     //let mut line: usize = 0x00;
     //for instruction in dis {

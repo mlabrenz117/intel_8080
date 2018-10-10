@@ -14,15 +14,15 @@ impl<'a> Disassembler<'a> {
 }
 
 impl<'a> Disassembler<'a> {
-    pub fn update_pc(&mut self, addr: u16) {
+    pub(super) fn update_pc(&mut self, addr: u16) {
         self.pc = addr as usize;
     }
 
-    pub fn pc(&self) -> u16 {
+    pub(super) fn pc(&self) -> u16 {
         self.pc as u16
     }
 
-    pub fn value_at(&self, addr: u16) -> u8 {
+    pub(super) fn value_at(&self, addr: u16) -> u8 {
         self.buf[addr as usize]
     }
 }

@@ -1,6 +1,7 @@
 use crate::disassembler::Disassembler;
 use crate::disassembler::{Instruction, Opcode};
 use failure::Error;
+use std::fmt::{self, Display};
 
 mod arithmetic;
 mod branch;
@@ -19,11 +20,11 @@ pub struct Cpu8080<'a> {
     h: u8,
     l: u8,
     sp: u16,
-    pc: u16,
     disassembler: Disassembler<'a>,
-    memory: [u8; 8000],
+    memory: [u8; 0xffff],
     flags: ConditionalFlags,
-    int_enable: u8,
+    //int_enable: u8,
+    rc: [bool; 8],
 }
 
 impl<'a> Cpu8080<'a> {
@@ -37,18 +38,20 @@ impl<'a> Cpu8080<'a> {
             h: 0,
             l: 0,
             sp: 0,
-            pc: 0,
             disassembler: Disassembler::new(buf),
-            memory: [0; 8000],
+            memory: [0; 0xffff],
             flags: ConditionalFlags::new(),
-            int_enable: 1,
+            //int_enable: 1,
+            rc: [false; 8],
         }
     }
 
     fn emulate_instruction(&mut self, instruction: Instruction) -> Result<(), Error> {
         use self::Opcode::*;
+        self.reset_rc();
         match instruction.opcode() {
             NOP => Ok(()),
+            // Data transfer Instructions
             LXI(r) => {
                 let params = instruction
                     .trinary_params()
@@ -56,8 +59,6 @@ impl<'a> Cpu8080<'a> {
                 self.lxi(r, params)
             }
             LDAX(r) => self.ldax(r),
-            INX(r) => self.inx(r),
-            DCR(r) => self.dcr(r),
             MOV(d, s) => self.mov(d, s),
             MVI(r) => {
                 let param = instruction
@@ -65,6 +66,10 @@ impl<'a> Cpu8080<'a> {
                     .expect("MVI param should be 1 byte");
                 self.mvi(r, param)
             }
+            PUSH(r) => self.push(r),
+            // Arithmetic Instructions
+            INX(r) => self.inx(r),
+            DCR(r) => self.dcr(r),
             ADD(r) => self.add(r),
             ADI => {
                 let param = instruction
@@ -72,6 +77,7 @@ impl<'a> Cpu8080<'a> {
                     .expect("ADI should always have 1 param byte");
                 self.adi(param)
             }
+            DAD(r) => self.dad(r),
             SUB(r) => self.sub(r),
             SUI => {
                 let param = instruction
@@ -79,11 +85,24 @@ impl<'a> Cpu8080<'a> {
                     .expect("SUI should always have 1 param byte");
                 self.sui(param)
             }
+            CPI => {
+                let data = instruction
+                    .binary_params()
+                    .expect("CUI should have 1 param byte");
+                self.cpi(data)
+            }
+            // Branch Instructions
             JMP => {
                 let addr = instruction
                     .trinary_params()
                     .expect("JMP Address should have 2 bytes");
                 self.jmp(addr)
+            }
+            JNZ => {
+                let addr = instruction
+                    .trinary_params()
+                    .expect("JNZ Address should have 2 bytes");
+                self.jnz(addr)
             }
             CALL => {
                 let addr = instruction
@@ -91,19 +110,45 @@ impl<'a> Cpu8080<'a> {
                     .expect("CALL Address should have 2 bytes");
                 self.call(addr)
             }
+            RET => self.ret(),
             _op => bail!("Instruction not yet implemented: {:?}", _op),
         }
     }
 
     pub fn start(&mut self) -> Result<(), Error> {
         while let Some(instruction) = self.disassembler.next() {
-            println!("Executing Instruction: {}", instruction);
-            self.emulate_instruction(instruction)?
+            let pc = self.disassembler.pc() - instruction.opcode().size().as_u16();
+            self.emulate_instruction(instruction)?;
+            println!("{:04x}: {}{}", pc, instruction, self);
+        }
+        Ok(())
+    }
+
+    pub fn run_num(&mut self, num: u64) -> Result<(), Error> {
+        let mut x = 0;
+        while let Some(instruction) = self.disassembler.next() {
+            if x > num {
+                break;
+            }
+            let pc = self.disassembler.pc() - instruction.opcode().size().as_u16();
+            self.emulate_instruction(instruction)?;
+            println!("{:04x}: {}{}", pc, instruction, self);
+            x += 1;
+        }
+        Ok(())
+    }
+
+    pub fn run_next(&mut self) -> Result<(), Error> {
+        if let Some(instruction) = self.disassembler.next() {
+            let pc = self.disassembler.pc() - instruction.opcode().size().as_u16();
+            self.emulate_instruction(instruction)?;
+            println!("{:04x}: {}{}", pc, instruction, self);
         }
         Ok(())
     }
 
     fn set_8bit_register(&mut self, register: Register, value: u8) {
+        self.register_changed(register);
         match register {
             Register::A => self.a = value,
             Register::B => self.b = value,
@@ -133,12 +178,12 @@ impl<'a> Cpu8080<'a> {
         }
     }
 
-    fn set_mem_val(&mut self, value: u8) {
-        self.set_mem_loc(self.m(), value);
+    fn set_mem_val(&mut self, value: u8) -> Result<(), Error> {
+        self.write_memory(self.m(), value)
     }
 
     fn get_mem_val(&self) -> u8 {
-        self.get_mem_loc(self.m())
+        self.read_memory(self.m())
     }
 
     fn m(&self) -> u16 {
@@ -147,7 +192,14 @@ impl<'a> Cpu8080<'a> {
         high << 8 | low
     }
 
+    fn set_m(&mut self, addr: u16) {
+        let (high, low) = split_bytes(addr);
+        self.set_8bit_register(Register::H, high);
+        self.set_8bit_register(Register::L, low);
+    }
+
     fn set_sp_register(&mut self, value: u16) {
+        self.register_changed(Register::SP);
         self.sp = value;
     }
 
@@ -162,9 +214,10 @@ impl<'a> Cpu8080<'a> {
         if loc_low < 0x2000 {
             bail!("Stack Overflow")
         };
-        self.set_mem_loc(loc_low, low);
-        self.set_mem_loc(loc_high, high);
+        self.write_memory(loc_low, low)?;
+        self.write_memory(loc_high, high)?;
         self.sp -= 2;
+        self.register_changed(Register::SP);
         Ok(())
     }
 
@@ -173,12 +226,28 @@ impl<'a> Cpu8080<'a> {
         if loc < 0x2000 {
             bail!("Stack Overflow")
         };
-        self.set_mem_loc(loc, value);
+        self.write_memory(loc, value)?;
         self.sp -= 1;
+        self.register_changed(Register::SP);
         Ok(())
     }
 
-    fn get_mem_loc(&self, addr: u16) -> u8 {
+    fn pop_u8(&mut self) -> Result<u8, Error> {
+        let value = self.read_memory(self.sp);
+        self.sp += 1;
+        self.register_changed(Register::SP);
+        Ok(value)
+    }
+
+    fn pop_u16(&mut self) -> Result<u16, Error> {
+        let low = self.read_memory(self.sp);
+        let high = self.read_memory(self.sp + 1);
+        self.sp += 2;
+        self.register_changed(Register::SP);
+        Ok(concat_bytes(high, low))
+    }
+
+    fn read_memory(&self, addr: u16) -> u8 {
         match addr < 0x2000 {
             true => self.disassembler.value_at(addr),
             false => {
@@ -188,10 +257,38 @@ impl<'a> Cpu8080<'a> {
         }
     }
 
-    fn set_mem_loc(&mut self, location: u16, value: u8) {
-        let location = location - 0x2000;
-        self.memory[location as usize] = value;
-        //std::mem::replace(&mut self.memory[location as usize], value);
+    fn write_memory(&mut self, addr: u16, value: u8) -> Result<(), Error> {
+        match addr < 0x2000 {
+            true => bail!("Cannot write to Read Only Memory"),
+            false => {
+                let addr = addr - 0x2000;
+                self.memory[addr as usize] = value;
+            }
+        }
+        Ok(())
+    }
+
+    fn register_changed(&mut self, reg: Register) {
+        match reg {
+            Register::A => self.rc[0] = true,
+            Register::B => self.rc[1] = true,
+            Register::C => self.rc[2] = true,
+            Register::D => self.rc[3] = true,
+            Register::E => self.rc[4] = true,
+            Register::H => self.rc[5] = true,
+            Register::L => self.rc[6] = true,
+            Register::M => {
+                self.rc[5] = true;
+                self.rc[6] = true
+            }
+            Register::SP => self.rc[7] = true,
+        }
+    }
+
+    fn reset_rc(&mut self) {
+        for i in self.rc.iter_mut() {
+            *i = false;
+        }
     }
 }
 
@@ -223,7 +320,6 @@ struct ConditionalFlags {
     p: bool,
     cy: bool,
     ac: bool,
-    pad: u8,
 }
 
 impl ConditionalFlags {
@@ -234,8 +330,18 @@ impl ConditionalFlags {
             p: false,
             cy: false,
             ac: false,
-            pad: 0,
         }
+    }
+}
+
+impl ConditionalFlags {
+    fn as_u8(&self) -> u8 {
+        let s = (self.s as u8) << 7;
+        let z = (self.z as u8) << 6;
+        let ac = (self.ac as u8) << 4;
+        let p = (self.p as u8) << 2;
+        let c = self.cy as u8;
+        s | z | ac | p | c | 2
     }
 }
 
@@ -277,9 +383,83 @@ impl Register {
     }
 }
 
+impl Display for Register {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            Register::A => "A",
+            Register::B => "B",
+            Register::C => "C",
+            Register::D => "D",
+            Register::E => "E",
+            Register::H => "H",
+            Register::L => "L",
+            Register::M => "M",
+            Register::SP => "S",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+trait TwosComplement<RHS = Self> {
+    type Output;
+    fn complement_sub(self, subtrahend: RHS) -> Self::Output;
+}
+
+impl TwosComplement for u8 {
+    type Output = (u8, bool);
+    fn complement_sub(self, subtrahend: Self) -> Self::Output {
+        let complement = !subtrahend + 1;
+        let (value, carry) = self.overflowing_add(complement);
+        (value, !carry)
+    }
+}
+
+impl<'a> Display for Cpu8080<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use colored::*;
+        let a = match self.rc[0] {
+            true => format!("{:02x}", self.a).blue(),
+            false => format!("{:02x}", self.a).white(),
+        };
+        let b = match self.rc[1] {
+            true => format!("{:02x}", self.b).blue(),
+            false => format!("{:02x}", self.b).white(),
+        };
+        let c = match self.rc[2] {
+            true => format!("{:02x}", self.c).blue(),
+            false => format!("{:02x}", self.c).white(),
+        };
+        let d = match self.rc[3] {
+            true => format!("{:02x}", self.d).blue(),
+            false => format!("{:02x}", self.d).white(),
+        };
+        let e = match self.rc[4] {
+            true => format!("{:02x}", self.e).blue(),
+            false => format!("{:02x}", self.e).white(),
+        };
+        let h = match self.rc[5] {
+            true => format!("{:02x}", self.h).blue(),
+            false => format!("{:02x}", self.h).white(),
+        };
+        let l = match self.rc[6] {
+            true => format!("{:02x}", self.l).blue(),
+            false => format!("{:02x}", self.l).white(),
+        };
+        let s = match self.rc[7] {
+            true => format!("{:02x}", self.sp).blue(),
+            false => format!("{:02x}", self.sp).white(),
+        };
+        write!(
+            f,
+            "CPU: a={}|b={}|c={}|d={}|e={}|h={}|l={}|sp={}",
+            a, b, c, d, e, h, l, s,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{check_parity, concat_bytes, split_bytes};
+    use super::{check_parity, concat_bytes, split_bytes, ConditionalFlags};
     #[test]
     fn can_split_bytes() {
         let (high, low) = split_bytes(0xea14);
@@ -300,5 +480,21 @@ mod tests {
         assert_eq!(check_parity(odd), false);
         let even = 0x9f; // 159
         assert_eq!(check_parity(even), true);
+    }
+
+    #[test]
+    fn flags_as_bytes() {
+        let mut f = ConditionalFlags::new();
+        assert_eq!(f.as_u8(), 0x02);
+        f.s = true;
+        assert_eq!(f.as_u8(), 0x82);
+        f.z = true;
+        assert_eq!(f.as_u8(), 0xc2);
+        f.ac = true;
+        assert_eq!(f.as_u8(), 0xd2);
+        f.p = true;
+        assert_eq!(f.as_u8(), 0xd6);
+        f.cy = true;
+        assert_eq!(f.as_u8(), 0xd7);
     }
 }

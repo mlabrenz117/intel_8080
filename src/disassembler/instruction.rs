@@ -1,5 +1,5 @@
 use crate::cpu8080::Register;
-use std::fmt::Display;
+use std::fmt::{self, Display};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Instruction {
@@ -66,11 +66,18 @@ impl InstructionParams {
 }
 
 impl Display for Instruction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self.params {
-            InstructionParams::Unary => write!(f, "{:?}", self.opcode),
-            InstructionParams::Binary(data) => write!(f, "{:?} :: {:02x}", self.opcode, data),
-            InstructionParams::Trinary(addr) => write!(f, "{:?} :: {:04x}", self.opcode, addr),
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::InstructionParams::*;
+
+        match (self.params, self.opcode.num_registers()) {
+            (Unary, 0) => write!(f, "{}           ; ", self.opcode),
+            (Unary, 1) => write!(f, "{}          ; ", self.opcode),
+            (Unary, 2) => write!(f, "{}        ; ", self.opcode),
+            (Binary(data), 0) => write!(f, "{}0x{:02x}       ; ", self.opcode, data),
+            (Binary(data), 1) => write!(f, "{}, 0x{:02x}    ; ", self.opcode, data),
+            (Trinary(addr), 0) => write!(f, "{}0x{:04x}     ; ", self.opcode, addr),
+            (Trinary(addr), 1) => write!(f, "{}, 0x{:04x}  ; ", self.opcode, addr),
+            (_, _) => write!(f, ""),
         }
     }
 }
@@ -462,6 +469,199 @@ impl Opcode {
             _ => Unary,
         }
     }
+
+    fn num_registers(&self) -> u8 {
+        use self::Opcode::*;
+        match self {
+            LXI(_) => 1,
+            STAX(_) => 1,
+            INX(_) => 1,
+            INR(_) => 1,
+            DCR(_) => 1,
+            MVI(_) => 1,
+            DAD(_) => 1,
+            LDAX(_) => 1,
+            DCX(_) => 1,
+            MOV(_, _) => 2,
+            PUSH(_) => 1,
+            POP(_) => 1,
+            ADD(_) => 1,
+            ADC(_) => 1,
+            SUB(_) => 1,
+            SBB(_) => 1,
+            ANA(_) => 1,
+            XRA(_) => 1,
+            ORA(_) => 1,
+            CMP(_) => 1,
+            RST(_) => 1,
+            _ => 0,
+        }
+    }
+}
+
+impl Display for Opcode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::Opcode::*;
+        let mut r1 = None;
+        let mut r2 = None;
+        let mut rst = None;
+        let s = match self {
+            NOP => "NOP",
+            LXI(r) => {
+                r1 = Some(r);
+                "LXI"
+            }
+            STAX(r) => {
+                r1 = Some(r);
+                "STAX"
+            }
+            INX(r) => {
+                r1 = Some(r);
+                "INX"
+            }
+            INR(r) => {
+                r1 = Some(r);
+                "INR"
+            }
+            DCR(r) => {
+                r1 = Some(r);
+                "DCR"
+            }
+            MVI(r) => {
+                r1 = Some(r);
+                "MVI"
+            }
+            DAD(r) => {
+                r1 = Some(r);
+                "DAD"
+            }
+            LDAX(r) => {
+                r1 = Some(r);
+                "LDAX"
+            }
+            DCX(r) => {
+                r1 = Some(r);
+                "DCX"
+            }
+            MOV(reg1, reg2) => {
+                r1 = Some(reg1);
+                r2 = Some(reg2);
+                "MOV"
+            }
+            PUSH(r) => {
+                r1 = Some(r);
+                "PUSH"
+            }
+            POP(r) => {
+                r1 = Some(r);
+                "POP"
+            }
+            ADD(r) => {
+                r1 = Some(r);
+                "ADD"
+            }
+            ADC(r) => {
+                r1 = Some(r);
+                "ADC"
+            }
+            SUB(r) => {
+                r1 = Some(r);
+                "SUB"
+            }
+            SBB(r) => {
+                r1 = Some(r);
+                "SBB"
+            }
+            ANA(r) => {
+                r1 = Some(r);
+                "ANA"
+            }
+            XRA(r) => {
+                r1 = Some(r);
+                "XRA"
+            }
+            ORA(r) => {
+                r1 = Some(r);
+                "ORA"
+            }
+            CMP(r) => {
+                r1 = Some(r);
+                "CMP"
+            }
+            RLC => "RLC",
+            RRC => "RRC",
+            RAL => "RAL",
+            RAR => "RAR",
+            RIM => "RIM",
+            SHLD => "SHLD",
+            LHLD => "LHLD",
+            DAA => "DAA",
+            CMA => "CMA",
+            SIM => "SIM",
+            STA => "STA",
+            STC => "STC",
+            LDA => "LDA",
+            CMC => "CMC",
+            RNZ => "RNZ",
+            JNZ => "JNZ",
+            JMP => "JMP",
+            CNZ => "CNZ",
+            ADI => "ADI",
+            RST(n) => {
+                rst = Some(n);
+                "RST"
+            }
+            RZ => "RZ",
+            RET => "RET",
+            HLT => "HLT",
+            JZ => "JZ",
+            CZ => "CZ",
+            CALL => "CALL",
+            ACI => "ACI",
+            RNC => "RNC",
+            JNC => "JNC",
+            OUT => "OUT",
+            CNC => "CNC",
+            SUI => "SUI",
+            RC => "RC",
+            JC => "JC",
+            IN => "IN",
+            CC => "CC",
+            SBI => "SBI",
+            RPO => "RPO",
+            JPO => "JPO",
+            XTHL => "XTHL",
+            CPO => "CPO",
+            ANI => "ANI",
+            RPE => "RPE",
+            PCHL => "PCHL",
+            JPE => "JPE",
+            XCHG => "XCHG",
+            CPE => "CPE",
+            XRI => "XRI",
+            RP => "RP",
+            JP => "JP",
+            DI => "DI",
+            CP => "CP",
+            ORI => "ORI",
+            RM => "RM",
+            SPHL => "SPHL",
+            JM => "JM",
+            EI => "EI",
+            CM => "CM",
+            CPI => "CPI",
+        };
+        match r1 {
+            Some(r) => match r2 {
+                Some(source) => write!(f, "{:<7}{},{}", s, r, source),
+                None => write!(f, "{:<7}{}", s, r),
+            },
+            None => match rst {
+                None => write!(f, "{:<7}", s),
+                Some(n) => write!(f, "{:<7}${}", s, n),
+            },
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -469,4 +669,14 @@ pub enum OpcodeSize {
     Unary,
     Binary,
     Trinary,
+}
+
+impl OpcodeSize {
+    pub fn as_u16(&self) -> u16 {
+        match self {
+            OpcodeSize::Unary => 1,
+            OpcodeSize::Binary => 2,
+            OpcodeSize::Trinary => 3,
+        }
+    }
 }
