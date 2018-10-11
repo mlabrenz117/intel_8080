@@ -1,6 +1,10 @@
-use crate::instruction::{read_bytes, Instruction, Opcode};
+use crate::instruction::{Instruction, Opcode};
 use failure::Error;
+use log::info;
 use std::fmt::{self, Display};
+
+mod program_counter;
+use self::program_counter::ProgramCounter;
 
 // Instruction Implementations
 mod arithmetic;
@@ -20,13 +24,11 @@ pub struct Cpu8080<'a> {
     h: u8,
     l: u8,
     sp: u16,
-    pc: u16,
+    pc: ProgramCounter<'a>,
     rom: &'a [u8],
     memory: [u8; 0xffff],
     flags: ConditionalFlags,
-    //int_enable: u8,
     rc: [bool; 8],
-    inst_cache: (Option<Instruction>, Option<Instruction>),
 }
 
 impl<'a> Cpu8080<'a> {
@@ -40,18 +42,16 @@ impl<'a> Cpu8080<'a> {
             h: 0,
             l: 0,
             sp: 0,
-            pc: 0,
+            pc: ProgramCounter::new(buf),
             rom: buf,
             memory: [0; 0xffff],
             flags: ConditionalFlags::new(),
             //int_enable: 1,
             rc: [false; 8],
-            inst_cache: (None, None),
         }
     }
 
-    fn emulate_instruction(&mut self, instruction: Instruction) -> Result<(), Error> {
-        println!("{:04x}: {}{}", self.pc, instruction, self);
+    pub fn emulate_instruction(&mut self, instruction: Instruction) -> Result<(), Error> {
         use self::Opcode::*;
         self.reset_rc();
         match instruction.opcode() {
@@ -121,13 +121,22 @@ impl<'a> Cpu8080<'a> {
     }
 
     pub fn start(&mut self) -> Result<(), Error> {
-        while let Some(result) = self.next() {
-            result?;
+        while let Some(instruction) = self.pc.next() {
+            info!("{}: {}{}", self.pc, instruction, self);
+            self.emulate_instruction(instruction)?;
         }
         Ok(())
     }
 
-    fn set_8bit_register(&mut self, register: Register, value: u8) {
+    pub fn step(&mut self) -> Result<(), Error> {
+        if let Some(instruction) = self.pc.next() {
+            info!("{}: {}{}", self.pc, instruction, self);
+            self.emulate_instruction(instruction)?
+        }
+        Ok(())
+    }
+
+    pub fn set_8bit_register(&mut self, register: Register, value: u8) {
         self.register_changed(register);
         match register {
             Register::A => self.a = value,
@@ -145,7 +154,7 @@ impl<'a> Cpu8080<'a> {
         };
     }
 
-    fn get_8bit_register(&self, register: Register) -> Result<u8, Error> {
+    pub fn get_8bit_register(&self, register: Register) -> Result<u8, Error> {
         match register {
             Register::A => Ok(self.a),
             Register::B => Ok(self.b),
@@ -158,24 +167,36 @@ impl<'a> Cpu8080<'a> {
         }
     }
 
-    fn m(&self) -> u16 {
+    pub fn m(&self) -> u16 {
         let high = self.get_8bit_register(Register::H).unwrap() as u16;
         let low = self.get_8bit_register(Register::L).unwrap() as u16;
         high << 8 | low
     }
 
-    fn set_m(&mut self, addr: u16) {
+    pub fn set_m(&mut self, addr: u16) {
         let (high, low) = split_bytes(addr);
         self.set_8bit_register(Register::H, high);
         self.set_8bit_register(Register::L, low);
     }
 
-    fn set_sp_register(&mut self, value: u16) {
+    fn set_sp(&mut self, value: u16) {
         self.register_changed(Register::SP);
         self.sp = value;
     }
 
-    fn push_u16(&mut self, value: u16) -> Result<(), Error> {
+    pub fn sp(&self) -> u16 {
+        self.sp
+    }
+
+    pub fn pc(&self) -> u16 {
+        self.pc.addr
+    }
+
+    pub fn set_pc(&mut self, addr: u16) {
+        self.pc.addr = addr;
+    }
+
+    pub fn push_u16(&mut self, value: u16) -> Result<(), Error> {
         let loc_low = self.sp - 2;
         let loc_high = self.sp - 1;
         let (high, low) = split_bytes(value);
@@ -189,7 +210,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    fn push_u8(&mut self, value: u8) -> Result<(), Error> {
+    pub fn push_u8(&mut self, value: u8) -> Result<(), Error> {
         let loc = self.sp - 1;
         if loc < 0x2000 {
             bail!("Stack Overflow")
@@ -200,14 +221,14 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    fn pop_u8(&mut self) -> Result<u8, Error> {
+    pub fn pop_u8(&mut self) -> Result<u8, Error> {
         let value = self.read_memory(self.sp);
         self.sp += 1;
         self.register_changed(Register::SP);
         Ok(value)
     }
 
-    fn pop_u16(&mut self) -> Result<u16, Error> {
+    pub fn pop_u16(&mut self) -> Result<u16, Error> {
         let low = self.read_memory(self.sp);
         let high = self.read_memory(self.sp + 1);
         self.sp += 2;
@@ -215,7 +236,7 @@ impl<'a> Cpu8080<'a> {
         Ok(concat_bytes(high, low))
     }
 
-    fn read_memory(&self, addr: u16) -> u8 {
+    pub fn read_memory(&self, addr: u16) -> u8 {
         match addr < 0x2000 {
             true => self.rom[addr as usize],
             false => {
@@ -225,7 +246,7 @@ impl<'a> Cpu8080<'a> {
         }
     }
 
-    fn write_memory(&mut self, addr: u16, value: u8) -> Result<(), Error> {
+    pub fn write_memory(&mut self, addr: u16, value: u8) -> Result<(), Error> {
         match addr < 0x2000 {
             true => bail!("Cannot write to Read Only Memory"),
             false => {
@@ -260,49 +281,18 @@ impl<'a> Cpu8080<'a> {
     }
 }
 
-impl<'a> Iterator for Cpu8080<'a> {
-    type Item = Result<(), Error>;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.pc as usize >= self.rom.len() {
-            return None;
-        }
-        match self.inst_cache {
-            (Some(c1), _) => {
-                self.inst_cache.0 = None;
-                self.pc += c1.len();
-                Some(self.emulate_instruction(c1))
-            }
-            (None, Some(c2)) => {
-                self.inst_cache.1 = None;
-                self.pc += c2.len();
-                Some(self.emulate_instruction(c2))
-            }
-            (_, _) => {
-                let end: usize = match self.rom.len() - (self.pc as usize) < 3 {
-                    true => self.rom.len(),
-                    false => self.pc as usize + 3,
-                };
-                let (instruction, cache1, cache2) = read_bytes(&self.rom[self.pc as usize..end]);
-                self.inst_cache = (cache1, cache2);
-                self.pc += instruction.len();
-                Some(self.emulate_instruction(instruction))
-            }
-        }
-    }
-}
-
-pub fn split_bytes(bytes: u16) -> (u8, u8) {
+pub(crate) fn split_bytes(bytes: u16) -> (u8, u8) {
     let low_byte = (bytes & 0x00ff) as u8;
     let high_byte = (bytes & 0xff00) >> 8;
     let high_byte = high_byte as u8;
     (high_byte, low_byte)
 }
 
-pub fn concat_bytes(high: u8, low: u8) -> u16 {
+pub(crate) fn concat_bytes(high: u8, low: u8) -> u16 {
     (high as u16) << 8 | (low as u16)
 }
 
-pub fn check_parity(num: u8) -> bool {
+pub(crate) fn check_parity(num: u8) -> bool {
     let mut bytes = num;
     let mut parity = 0;
     while bytes > 0 {

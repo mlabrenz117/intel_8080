@@ -1,5 +1,5 @@
 [package]
-name = "space_invaders"
+name = "i8080_emulator"
 version = "0.1.0"
 authors = ["Mitch Labrenz <mslabrenz@gmail.com>"]
 edition = "2018"
@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 failure = "0.1"
 colored = "1.6"
+log = "0.4"

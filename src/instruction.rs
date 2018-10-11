@@ -14,44 +14,6 @@ enum InstructionParams {
     Trinary(u16),
 }
 
-pub fn read_bytes(buf: &[u8]) -> (Instruction, Option<Instruction>, Option<Instruction>) {
-    match buf.len() {
-        1 => {
-            let opcode = Opcode::from(buf[0]);
-            (Instruction::new_unary(opcode), None, None)
-        }
-        2 => {
-            let opcode = Opcode::from(buf[0]);
-            match opcode.size() {
-                OpcodeSize::Binary => (Instruction::new_binary(opcode, buf[1]), None, None),
-                _ => (
-                    Instruction::new_unary(opcode),
-                    Some(Instruction::new_unary(Opcode::from(buf[1]))),
-                    None,
-                ),
-            }
-        }
-        _ => {
-            let opcode = Opcode::from(buf[0]);
-            match opcode.size() {
-                OpcodeSize::Binary => {
-                    let data: u8 = buf[1];
-                    (Instruction::new_binary(opcode, data), None, None)
-                    //Potential to cache instruction
-                }
-                OpcodeSize::Trinary => {
-                    let data_low = buf[1] as u16;
-                    let data_high = buf[2] as u16;
-                    let data_high = data_high << 8;
-                    let addr: u16 = data_high | data_low;
-                    (Instruction::new_trinary(opcode, addr), None, None)
-                }
-                OpcodeSize::Unary => (Instruction::new_unary(opcode), None, None),
-            }
-        }
-    }
-}
-
 impl Instruction {
     pub fn new_unary(opcode: Opcode) -> Instruction {
         Instruction {
