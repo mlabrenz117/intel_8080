@@ -15,6 +15,9 @@ mod logical;
 mod special;
 mod stack;
 
+mod error;
+use self::error::EmulateError;
+
 pub struct Cpu8080<'a> {
     a: u8,
     b: u8,
@@ -51,79 +54,41 @@ impl<'a> Cpu8080<'a> {
         }
     }
 
-    pub fn emulate_instruction(&mut self, instruction: Instruction) -> Result<(), Error> {
+    pub fn emulate_instruction(&mut self, instruction: Instruction) -> Result<(), EmulateError> {
         use self::Opcode::*;
         self.reset_rc();
         match instruction.opcode() {
             NOP => Ok(()),
             // Data transfer Instructions
-            LXI(r) => {
-                let params = instruction
-                    .trinary_params()
-                    .expect("LXI should always have 2 param bytes");
-                self.lxi(r, params)
-            }
+            LXI(r) => self.lxi(r, instruction.data()),
             LDAX(r) => self.ldax(r),
             MOV(d, s) => self.mov(d, s),
-            MVI(r) => {
-                let param = instruction
-                    .binary_params()
-                    .expect("MVI param should be 1 byte");
-                self.mvi(r, param)
-            }
+            MVI(r) => self.mvi(r, instruction.data()),
+            XCHG => self.xchg(),
             PUSH(r) => self.push(r),
+            POP(r) => self.pop(r),
             // Arithmetic Instructions
             INX(r) => self.inx(r),
             DCR(r) => self.dcr(r),
             ADD(r) => self.add(r),
-            ADI => {
-                let param = instruction
-                    .binary_params()
-                    .expect("ADI should always have 1 param byte");
-                self.adi(param)
-            }
+            ADI => self.adi(instruction.data()),
             DAD(r) => self.dad(r),
             SUB(r) => self.sub(r),
-            SUI => {
-                let param = instruction
-                    .binary_params()
-                    .expect("SUI should always have 1 param byte");
-                self.sui(param)
-            }
-            CPI => {
-                let data = instruction
-                    .binary_params()
-                    .expect("CUI should have 1 param byte");
-                self.cpi(data)
-            }
+            SUI => self.sui(instruction.data()),
+            CPI => self.cpi(instruction.data()),
             // Branch Instructions
-            JMP => {
-                let addr = instruction
-                    .trinary_params()
-                    .expect("JMP Address should have 2 bytes");
-                self.jmp(addr)
-            }
-            JNZ => {
-                let addr = instruction
-                    .trinary_params()
-                    .expect("JNZ Address should have 2 bytes");
-                self.jnz(addr)
-            }
-            CALL => {
-                let addr = instruction
-                    .trinary_params()
-                    .expect("CALL Address should have 2 bytes");
-                self.call(addr)
-            }
+            JMP => self.jmp(instruction.data()),
+            JNZ => self.jnz(instruction.data()),
+            CALL => self.call(instruction.data()),
             RET => self.ret(),
-            _op => bail!("Instruction not yet implemented: {:?}", _op),
+            _op => return Err(EmulateError::UnimplementedInstruction { opcode: _op }),
         }
     }
 
     pub fn start(&mut self) -> Result<(), Error> {
         while let Some(instruction) = self.pc.next() {
-            info!("{}: {}{}", self.pc, instruction, self);
             self.emulate_instruction(instruction)?;
+            info!("{}: {}{}", self.pc, instruction, self);
         }
         Ok(())
     }
@@ -154,7 +119,7 @@ impl<'a> Cpu8080<'a> {
         };
     }
 
-    pub fn get_8bit_register(&self, register: Register) -> Result<u8, Error> {
+    pub fn get_8bit_register(&self, register: Register) -> Result<u8, EmulateError> {
         match register {
             Register::A => Ok(self.a),
             Register::B => Ok(self.b),
@@ -163,7 +128,7 @@ impl<'a> Cpu8080<'a> {
             Register::E => Ok(self.e),
             Register::H => Ok(self.h),
             Register::L => Ok(self.l),
-            _r => bail!("{:?} is not 8 bit"),
+            _r => return Err(EmulateError::RegisterNot8Bit { register }),
         }
     }
 
@@ -196,12 +161,12 @@ impl<'a> Cpu8080<'a> {
         self.pc.addr = addr;
     }
 
-    pub fn push_u16(&mut self, value: u16) -> Result<(), Error> {
+    pub fn push_u16(&mut self, value: u16) -> Result<(), EmulateError> {
         let loc_low = self.sp - 2;
         let loc_high = self.sp - 1;
         let (high, low) = split_bytes(value);
         if loc_low < 0x2000 {
-            bail!("Stack Overflow")
+            return Err(EmulateError::StackOverflow);
         };
         self.write_memory(loc_low, low)?;
         self.write_memory(loc_high, high)?;
@@ -210,10 +175,10 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub fn push_u8(&mut self, value: u8) -> Result<(), Error> {
+    pub fn push_u8(&mut self, value: u8) -> Result<(), EmulateError> {
         let loc = self.sp - 1;
         if loc < 0x2000 {
-            bail!("Stack Overflow")
+            return Err(EmulateError::StackOverflow);
         };
         self.write_memory(loc, value)?;
         self.sp -= 1;
@@ -221,14 +186,14 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub fn pop_u8(&mut self) -> Result<u8, Error> {
+    pub fn pop_u8(&mut self) -> Result<u8, EmulateError> {
         let value = self.read_memory(self.sp);
         self.sp += 1;
         self.register_changed(Register::SP);
         Ok(value)
     }
 
-    pub fn pop_u16(&mut self) -> Result<u16, Error> {
+    pub fn pop_u16(&mut self) -> Result<u16, EmulateError> {
         let low = self.read_memory(self.sp);
         let high = self.read_memory(self.sp + 1);
         self.sp += 2;
@@ -246,9 +211,9 @@ impl<'a> Cpu8080<'a> {
         }
     }
 
-    pub fn write_memory(&mut self, addr: u16, value: u8) -> Result<(), Error> {
+    pub fn write_memory(&mut self, addr: u16, value: u8) -> Result<(), EmulateError> {
         match addr < 0x2000 {
-            true => bail!("Cannot write to Read Only Memory"),
+            true => return Err(EmulateError::WriteToROM),
             false => {
                 let addr = addr - 0x2000;
                 self.memory[addr as usize] = value;
@@ -302,7 +267,7 @@ pub(crate) fn check_parity(num: u8) -> bool {
     parity == 0
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 struct ConditionalFlags {
     z: bool,
     s: bool,
@@ -323,14 +288,26 @@ impl ConditionalFlags {
     }
 }
 
-impl ConditionalFlags {
-    fn as_u8(&self) -> u8 {
-        let s = (self.s as u8) << 7;
-        let z = (self.z as u8) << 6;
-        let ac = (self.ac as u8) << 4;
-        let p = (self.p as u8) << 2;
-        let c = self.cy as u8;
+impl From<ConditionalFlags> for u8 {
+    fn from(flag: ConditionalFlags) -> u8 {
+        let s = (flag.s as u8) << 7;
+        let z = (flag.z as u8) << 6;
+        let ac = (flag.ac as u8) << 4;
+        let p = (flag.p as u8) << 2;
+        let c = flag.cy as u8;
         s | z | ac | p | c | 2
+    }
+}
+
+impl From<u8> for ConditionalFlags {
+    fn from(byte: u8) -> ConditionalFlags {
+        ConditionalFlags {
+            s: byte & 0x80 != 0x00,
+            z: byte & 0x40 != 0x00,
+            ac: byte & 0x10 != 0x00,
+            p: byte & 0x04 != 0x00,
+            cy: byte & 0x01 != 0x00,
+        }
     }
 }
 
@@ -474,16 +451,16 @@ mod tests {
     #[test]
     fn flags_as_bytes() {
         let mut f = ConditionalFlags::new();
-        assert_eq!(f.as_u8(), 0x02);
+        assert_eq!(u8::from(f), 0x02);
         f.s = true;
-        assert_eq!(f.as_u8(), 0x82);
+        assert_eq!(u8::from(f), 0x82);
         f.z = true;
-        assert_eq!(f.as_u8(), 0xc2);
+        assert_eq!(u8::from(f), 0xc2);
         f.ac = true;
-        assert_eq!(f.as_u8(), 0xd2);
+        assert_eq!(u8::from(f), 0xd2);
         f.p = true;
-        assert_eq!(f.as_u8(), 0xd6);
+        assert_eq!(u8::from(f), 0xd6);
         f.cy = true;
-        assert_eq!(f.as_u8(), 0xd7);
+        assert_eq!(u8::from(f), 0xd7);
     }
 }

@@ -1,5 +1,8 @@
-use super::{concat_bytes, split_bytes, Cpu8080, Register};
-use failure::Error;
+use crate::{
+    cpu8080::error::EmulateError,
+    cpu8080::{concat_bytes, Cpu8080, Register},
+    instruction::{InstructionData, Opcode},
+};
 
 impl<'a> Cpu8080<'a> {
     /// #LXI - Load Register Pair Immediate
@@ -15,15 +18,28 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given registers A, C, E, L, or M.
-    pub(super) fn lxi(&mut self, register: Register, params: u16) -> Result<(), Error> {
-        if let Some(r2) = register.get_pair() {
-            let (high, low) = split_bytes(params);
-            self.set_8bit_register(register, high);
-            self.set_8bit_register(r2, low);
-        } else if register == Register::SP {
-            self.set_sp(params);
+    pub(super) fn lxi(
+        &mut self,
+        register: Register,
+        data: InstructionData,
+    ) -> Result<(), EmulateError> {
+        if let (Some(high), Some(low)) = data.tuple() {
+            if let Some(r2) = register.get_pair() {
+                self.set_8bit_register(register, high);
+                self.set_8bit_register(r2, low);
+            } else if register == Register::SP {
+                self.set_sp(concat_bytes(high, low));
+            } else {
+                return Err(EmulateError::UnsupportedRegister {
+                    opcode: Opcode::LXI(register),
+                    register,
+                });
+            }
         } else {
-            bail!("LXI does not support register {:?}", register);
+            return Err(EmulateError::InvalidInstructionData {
+                opcode: Opcode::LXI(register),
+                data,
+            });
         }
         Ok(())
     }
@@ -38,10 +54,15 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given registers A, C, E, H, L, M, SP.
-    pub(super) fn ldax(&mut self, register: Register) -> Result<(), Error> {
+    pub(super) fn ldax(&mut self, register: Register) -> Result<(), EmulateError> {
         let pair = match register {
             Register::B | Register::D => register.get_pair().unwrap(),
-            _r => bail!("LDAX does not support register {:?}", register),
+            _r => {
+                return Err(EmulateError::UnsupportedRegister {
+                    opcode: Opcode::LDAX(register),
+                    register,
+                })
+            }
         };
         let loc = concat_bytes(
             self.get_8bit_register(register)?,
@@ -66,11 +87,23 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given register SP.
-    pub(super) fn mov(&mut self, destination: Register, source: Register) -> Result<(), Error> {
+    pub(super) fn mov(
+        &mut self,
+        destination: Register,
+        source: Register,
+    ) -> Result<(), EmulateError> {
         match (destination, source) {
-            (Register::SP, _) | (_, Register::SP) => bail!("Cannot move using SP Register"),
+            (Register::SP, _) | (_, Register::SP) => {
+                return Err(EmulateError::UnsupportedRegister {
+                    opcode: Opcode::MOV(destination, source),
+                    register: Register::SP,
+                })
+            }
             (Register::M, _r) => {
                 let addr = self.m();
+                if _r == Register::M {
+                    return Ok(());
+                };
                 self.write_memory(addr, self.get_8bit_register(_r)?)?;
             }
             (_r, Register::M) => {
@@ -92,15 +125,31 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given register SP.
-    pub(super) fn mvi(&mut self, register: Register, value: u8) -> Result<(), Error> {
-        match register {
-            Register::SP => bail!("MVI cannot be used with SP Register"),
-            Register::M => {
-                self.write_memory(self.m(), value)?;
+    pub(super) fn mvi(
+        &mut self,
+        register: Register,
+        data: InstructionData,
+    ) -> Result<(), EmulateError> {
+        if let (Some(value), None) = data.tuple() {
+            match register {
+                Register::SP => {
+                    return Err(EmulateError::UnsupportedRegister {
+                        opcode: Opcode::MVI(register),
+                        register,
+                    })
+                }
+                Register::M => {
+                    self.write_memory(self.m(), value)?;
+                }
+                _r => {
+                    self.set_8bit_register(register, value);
+                }
             }
-            _r => {
-                self.set_8bit_register(register, value);
-            }
+        } else {
+            return Err(EmulateError::InvalidInstructionData {
+                opcode: Opcode::MVI(register),
+                data,
+            });
         }
         Ok(())
     }
@@ -109,31 +158,94 @@ impl<'a> Cpu8080<'a> {
     ///
     /// Opcodes: 0xc5, 0xd5, 0xe5, 0xf5
     /// Supported Registers: B(0xc5), D(0xd5), H(0xe5), SP(0xf5)
-    /// NOTE: We use Register::SP to indicate PSW
+    /// NOTE: We use Register::A to indicate PSW
     ///
     /// The contest of the specified register pair are saved in
     /// two bytes of memory indicated by the stack pointer SP.
     ///
     /// The contents of the first register are saved at memory
     /// address one less than the address indicated by the stack pointer.
-    /// If register SP(PSW) is specified the first bye of information saved holds the contents of the A
+    /// If register A(PSW) is specified the first bye of information saved holds the contents of the A
     /// register; the second byte holds the settings of the five condition flags (Carry, Zero,
     /// Sign, Parity, and Aux Carry.
     ///
     /// #Errors
     /// Fails if given registers A, C, E, L, or M
-    pub(super) fn push(&mut self, register: Register) -> Result<(), Error> {
+    pub(super) fn push(&mut self, register: Register) -> Result<(), EmulateError> {
         match (register, register.get_pair()) {
             (_r, Some(r2)) => {
                 let value = concat_bytes(self.get_8bit_register(_r)?, self.get_8bit_register(r2)?);
                 self.push_u16(value)?;
             }
-            (Register::SP, None) => {
-                let value = concat_bytes(self.get_8bit_register(Register::A)?, self.flags.as_u8());
+            (Register::A, None) => {
+                let value =
+                    concat_bytes(self.get_8bit_register(Register::A)?, u8::from(self.flags));
                 self.push_u16(value)?;
             }
-            (_r, _) => bail!("PUSH Register not supported: {}", _r),
+            (_r, _) => {
+                return Err(EmulateError::UnsupportedRegister {
+                    opcode: Opcode::PUSH(register),
+                    register,
+                })
+            }
         };
+        Ok(())
+    }
+
+    /// Pop - Pop Data Off Stack
+    ///
+    /// Opcodes: 0xc1, 0xd1, 0xe1, 0xf1
+    /// Supported Registers: B(0xc1), D(0xd1), H(0xe1), SP(0xf1)
+    /// NOTE: We use Register::A to indicate PSW
+    ///
+    /// The contents of the specified register pair are restored from two bytes of memory indicated
+    /// by the Stack Pointer, SP. The byte of memory indicated by the stack pointer is loaded into
+    /// the second register of the register pair. The byte of of memory at the address one greater
+    /// than the stack pointer is loaded into the first register of the register pair, unless PSW
+    /// is indicated, then it is loaded into the conditional flags.
+    ///
+    /// The Stack Pointer is incremented by 2.
+    pub(super) fn pop(&mut self, register: Register) -> Result<(), EmulateError> {
+        use super::ConditionalFlags;
+        match (register, register.get_pair()) {
+            (_r, Some(r2)) => {
+                let low = self.pop_u8()?;
+                let high = self.pop_u8()?;
+                self.set_8bit_register(_r, high);
+                self.set_8bit_register(r2, low);
+            }
+            (Register::A, None) => {
+                let flags = self.pop_u8()?;
+                let a = self.pop_u8()?;
+                self.flags = ConditionalFlags::from(flags);
+                self.set_8bit_register(Register::A, a);
+            }
+            (_r, _) => {
+                return Err(EmulateError::UnsupportedRegister {
+                    opcode: Opcode::POP(register),
+                    register,
+                })
+            }
+        }
+        Ok(())
+    }
+
+    ///XCHG - Exchange Registers
+    ///
+    /// Opcodes: 0xeb
+    /// Unary Opcode, No register
+    ///
+    /// The 16 bits of data held in the H and L registers are exchanged with the 16 bits of data
+    /// held in the D and E registers.
+    ///
+    /// Condition flags affected: None,
+    pub(super) fn xchg(&mut self) -> Result<(), EmulateError> {
+        let l = self.l;
+        let h = self.h;
+        self.set_8bit_register(Register::L, self.e);
+        self.set_8bit_register(Register::H, self.d);
+        self.set_8bit_register(Register::D, h);
+        self.set_8bit_register(Register::E, l);
         Ok(())
     }
 }
@@ -141,6 +253,7 @@ impl<'a> Cpu8080<'a> {
 #[cfg(test)]
 mod tests {
     use super::Cpu8080;
+
     #[test]
     fn lxi() {
         let bytecode = [
@@ -230,5 +343,54 @@ mod tests {
         assert_eq!(cpu.read_memory(0x2400 - 3), 0x1f);
         assert_eq!(cpu.read_memory(0x2400 - 4), 0x47);
         assert_eq!(cpu.sp, 0x2400 - 4);
+    }
+
+    #[test]
+    fn pop() {
+        use crate::cpu8080::ConditionalFlags;
+        let bytecode = [
+            0xf5, // PUSH PSW
+            0xc5, // PUSH B
+            0xd1, // POP D
+            0xf1, // POP PSW
+        ];
+        let mut cpu = Cpu8080::new(&bytecode);
+        cpu.sp = 0x2400;
+        cpu.a = 0xaa;
+        cpu.b = 0xbb;
+        cpu.flags.cy = true;
+        cpu.flags.p = true;
+        cpu.step().unwrap();
+        cpu.step().unwrap();
+        cpu.flags = ConditionalFlags::new();
+        cpu.step().unwrap();
+        assert_eq!(cpu.d, 0xbb);
+        cpu.step().unwrap();
+        assert_eq!(
+            cpu.flags,
+            ConditionalFlags {
+                z: false,
+                s: false,
+                ac: false,
+                p: true,
+                cy: true
+            }
+        );
+        assert_eq!(cpu.sp, 0x2400);
+    }
+
+    #[test]
+    fn xchg() {
+        let bytecode = [0xeb];
+        let mut cpu = Cpu8080::new(&bytecode);
+        cpu.h = 0x00;
+        cpu.l = 0xff;
+        cpu.d = 0x33;
+        cpu.e = 0x55;
+        cpu.start().unwrap();
+        assert_eq!(cpu.h, 0x33);
+        assert_eq!(cpu.l, 0x55);
+        assert_eq!(cpu.d, 0x00);
+        assert_eq!(cpu.e, 0xff);
     }
 }

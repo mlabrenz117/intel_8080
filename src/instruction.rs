@@ -1,38 +1,91 @@
-use crate::cpu8080::Register;
+use crate::cpu8080::{concat_bytes, split_bytes, Register};
+use failure::Error;
 use std::fmt::{self, Display};
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct InstructionData {
+    first: Option<u8>,
+    second: Option<u8>,
+}
+
+impl InstructionData {
+    pub fn new(first: Option<u8>, second: Option<u8>) -> Self {
+        match (first, second) {
+            (None, Some(s)) => InstructionData {
+                first: Some(s),
+                second: None,
+            },
+            (_, _) => InstructionData { first, second },
+        }
+    }
+
+    pub fn first(&self) -> Option<u8> {
+        self.first
+    }
+
+    pub fn second(&self) -> Option<u8> {
+        self.second
+    }
+
+    pub fn tuple(&self) -> (Option<u8>, Option<u8>) {
+        (self.first, self.second)
+    }
+}
+
+impl Display for InstructionData {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.tuple() {
+            (Some(hi), Some(lo)) => {
+                let value = concat_bytes(hi, lo);
+                write!(f, "0x{:04x}", value)
+            }
+            (Some(byte), None) => write!(f, "0x{:02x}", byte),
+            (_, _) => write!(f, ""),
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Instruction {
     opcode: Opcode,
-    params: InstructionParams,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum InstructionParams {
-    Unary,
-    Binary(u8),
-    Trinary(u16),
+    data: InstructionData,
 }
 
 impl Instruction {
-    pub fn new_unary(opcode: Opcode) -> Instruction {
-        Instruction {
-            opcode,
-            params: InstructionParams::Unary,
+    pub fn new_unary(opcode: Opcode) -> Result<Instruction, Error> {
+        if let OpcodeSize::Unary = opcode.size() {
+            Ok(Instruction {
+                opcode,
+                data: InstructionData::new(None, None),
+                //params: InstructionParams::Unary,
+            })
+        } else {
+            bail!("Unary instructions require Unary Opcodes")
         }
     }
 
-    pub fn new_binary(opcode: Opcode, data: u8) -> Instruction {
-        Instruction {
-            opcode,
-            params: InstructionParams::Binary(data),
+    pub fn new_binary(opcode: Opcode, data: u8) -> Result<Instruction, Error> {
+        if let OpcodeSize::Binary = opcode.size() {
+            Ok(Instruction {
+                opcode,
+                data: InstructionData::new(Some(data), None),
+                //params: InstructionParams::Binary(data),
+            })
+        } else {
+            bail!("Binary instructions require Binary Opcodes")
         }
     }
 
-    pub fn new_trinary(opcode: Opcode, addr: u16) -> Instruction {
-        Instruction {
-            opcode,
-            params: InstructionParams::Trinary(addr),
+    pub fn new_trinary(opcode: Opcode, addr: u16) -> Result<Instruction, Error> {
+        if let OpcodeSize::Trinary = opcode.size() {
+            let (h, l) = split_bytes(addr);
+            Ok(Instruction {
+                opcode,
+                data: InstructionData::new(Some(h), Some(l)),
+                //params: InstructionParams::Trinary(addr),
+            })
+        } else {
+            bail!("Trinary instructions require Trinary Opcodes")
         }
     }
 
@@ -48,43 +101,21 @@ impl Instruction {
         self.opcode
     }
 
-    pub fn binary_params(&self) -> Option<u8> {
-        self.params.binary_params()
-    }
-
-    pub fn trinary_params(&self) -> Option<u16> {
-        self.params.trinary_params()
-    }
-}
-
-impl InstructionParams {
-    fn binary_params(&self) -> Option<u8> {
-        match self {
-            InstructionParams::Binary(param) => Some(*param),
-            _ => None,
-        }
-    }
-
-    fn trinary_params(&self) -> Option<u16> {
-        match self {
-            InstructionParams::Trinary(param) => Some(*param),
-            _ => None,
-        }
+    pub fn data(&self) -> InstructionData {
+        self.data
     }
 }
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::InstructionParams::*;
-
-        match (self.params, self.opcode.num_registers()) {
-            (Unary, 0) => write!(f, "{}           ; ", self.opcode),
-            (Unary, 1) => write!(f, "{}          ; ", self.opcode),
-            (Unary, 2) => write!(f, "{}        ; ", self.opcode),
-            (Binary(data), 0) => write!(f, "{}0x{:02x}       ; ", self.opcode, data),
-            (Binary(data), 1) => write!(f, "{}, 0x{:02x}    ; ", self.opcode, data),
-            (Trinary(addr), 0) => write!(f, "{}0x{:04x}     ; ", self.opcode, addr),
-            (Trinary(addr), 1) => write!(f, "{}, 0x{:04x}  ; ", self.opcode, addr),
+        match (self.len(), self.opcode.num_registers()) {
+            (1, 0) => write!(f, "{}           ; ", self.opcode),
+            (1, 1) => write!(f, "{}          ; ", self.opcode),
+            (1, 2) => write!(f, "{}        ; ", self.opcode),
+            (2, 0) => write!(f, "{}{}       ; ", self.opcode, self.data),
+            (2, 1) => write!(f, "{}, {}    ; ", self.opcode, self.data),
+            (3, 0) => write!(f, "{}{}     ; ", self.opcode, self.data),
+            (3, 1) => write!(f, "{}, {}  ; ", self.opcode, self.data),
             (_, _) => write!(f, ""),
         }
     }
@@ -412,11 +443,11 @@ impl From<u8> for Opcode {
             0xee => XRI,
             0xef => RST(5),
             0xf0 => RP,
-            0xf1 => POP(SP),
+            0xf1 => POP(A),
             0xf2 => JP,
             0xf3 => DI,
             0xf4 => CP,
-            0xf5 => PUSH(SP),
+            0xf5 => PUSH(A),
             0xf6 => ORI,
             0xf7 => RST(6),
             0xf8 => RM,

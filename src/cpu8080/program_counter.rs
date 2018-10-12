@@ -28,7 +28,10 @@ impl<'a> Iterator for ProgramCounter<'a> {
             OpcodeSize::Binary => {
                 let data: u8 = self.rom[self.addr()];
                 self.addr += 1;
-                Some(Instruction::new_binary(opcode, data))
+                Some(
+                    Instruction::new_binary(opcode, data)
+                        .expect("Cannot panic as matching from opcode.size()"),
+                )
             }
             OpcodeSize::Trinary => {
                 let data_low = self.rom[self.addr()] as u16;
@@ -36,9 +39,15 @@ impl<'a> Iterator for ProgramCounter<'a> {
                 let data_high = data_high << 8;
                 let addr: u16 = data_high | data_low;
                 self.addr += 2;
-                Some(Instruction::new_trinary(opcode, addr))
+                Some(
+                    Instruction::new_trinary(opcode, addr)
+                        .expect("Cannot panic as matching from opcode.size()"),
+                )
             }
-            OpcodeSize::Unary => Some(Instruction::new_unary(opcode)),
+            OpcodeSize::Unary => Some(
+                Instruction::new_unary(opcode)
+                    .expect("Cannot panic as matching from opcode.size()"),
+            ),
         }
     }
 }
