@@ -1,10 +1,12 @@
 use crate::instruction::{Instruction, Opcode};
-use failure::Error;
-use log::info;
+use log::{error, info};
 use std::fmt::{self, Display};
 
 mod program_counter;
 use self::program_counter::ProgramCounter;
+
+mod error;
+use self::error::EmulateError;
 
 // Instruction Implementations
 mod arithmetic;
@@ -14,9 +16,6 @@ mod io;
 mod logical;
 mod special;
 mod stack;
-
-mod error;
-use self::error::EmulateError;
 
 pub struct Cpu8080<'a> {
     a: u8,
@@ -30,6 +29,7 @@ pub struct Cpu8080<'a> {
     pc: ProgramCounter<'a>,
     rom: &'a [u8],
     memory: [u8; 0xffff],
+    devices: [u8; 0xff],
     flags: ConditionalFlags,
     rc: [bool; 8],
 }
@@ -48,6 +48,7 @@ impl<'a> Cpu8080<'a> {
             pc: ProgramCounter::new(buf),
             rom: buf,
             memory: [0; 0xffff],
+            devices: [0; 0xff],
             flags: ConditionalFlags::new(),
             //int_enable: 1,
             rc: [false; 8],
@@ -76,29 +77,37 @@ impl<'a> Cpu8080<'a> {
             SUB(r) => self.sub(r),
             SUI => self.sui(instruction.data()),
             CPI => self.cpi(instruction.data()),
+            RRC => self.rrc(),
+            // IO Instructions
+            OUT => self.out(instruction.data()),
             // Branch Instructions
             JMP => self.jmp(instruction.data()),
             JNZ => self.jnz(instruction.data()),
             CALL => self.call(instruction.data()),
             RET => self.ret(),
-            _op => return Err(EmulateError::UnimplementedInstruction { opcode: _op }),
+            _op => return Err(EmulateError::UnimplementedInstruction { instruction }),
         }
     }
 
-    pub fn start(&mut self) -> Result<(), Error> {
+    pub fn run(&mut self) {
         while let Some(instruction) = self.pc.next() {
-            self.emulate_instruction(instruction)?;
-            info!("{}: {}{}", self.pc, instruction, self);
+            if let Err(e) = self.emulate_instruction(instruction) {
+                error!("{}", e);
+                break;
+            } else {
+                info!("{}: {}; {}", self.pc, instruction, self);
+            }
         }
-        Ok(())
     }
 
-    pub fn step(&mut self) -> Result<(), Error> {
+    pub fn step(&mut self) {
         if let Some(instruction) = self.pc.next() {
-            info!("{}: {}{}", self.pc, instruction, self);
-            self.emulate_instruction(instruction)?
+            if let Err(e) = self.emulate_instruction(instruction) {
+                error!("{}", e);
+            } else {
+                info!("{}: {}{}", self.pc, instruction, self);
+            }
         }
-        Ok(())
     }
 
     pub fn set_8bit_register(&mut self, register: Register, value: u8) {
@@ -220,6 +229,14 @@ impl<'a> Cpu8080<'a> {
             }
         }
         Ok(())
+    }
+
+    pub fn write_device(&mut self, device: u8, value: u8) {
+        self.devices[device as usize] = value;
+    }
+
+    pub fn read_device(&self, device: u8) -> u8 {
+        self.devices[device as usize]
     }
 
     fn register_changed(&mut self, reg: Register) {

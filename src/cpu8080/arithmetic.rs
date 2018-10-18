@@ -165,6 +165,12 @@ impl<'a> Cpu8080<'a> {
         }
         Ok(())
     }
+
+    pub(super) fn rrc(&mut self) -> Result<(), EmulateError> {
+        self.set_8bit_register(Register::A, self.a.rotate_right(1));
+        self.flags.cy = self.a & 0x80 != 0;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -193,14 +199,14 @@ mod tests {
         let mut cpu = Cpu8080::new(&bytecode);
         cpu.a = 0x2e;
         cpu.b = 0x6c;
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.a, 0x9a);
         assert_eq!(cpu.flags.cy, false);
         assert_eq!(cpu.flags.p, true);
         assert_eq!(cpu.flags.z, false);
         assert_eq!(cpu.flags.s, true);
 
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.a, 0x34);
         assert_eq!(cpu.flags.cy, true);
         assert_eq!(cpu.flags.p, false);
@@ -216,14 +222,14 @@ mod tests {
         ];
         let mut cpu = Cpu8080::new(&bytecode);
         cpu.a = 0x2e;
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.a, 0x9a);
         assert_eq!(cpu.flags.cy, false);
         assert_eq!(cpu.flags.p, true);
         assert_eq!(cpu.flags.z, false);
         assert_eq!(cpu.flags.s, true);
 
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.a, 0x34);
         assert_eq!(cpu.flags.cy, true);
         assert_eq!(cpu.flags.p, false);
@@ -240,7 +246,7 @@ mod tests {
         let mut cpu = Cpu8080::new(&bytecode); // SUB B
         cpu.a = 0x49;
         cpu.b = 0x3a;
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.a, 0x0f);
         assert_eq!(cpu.flags.cy, false);
         assert_eq!(cpu.flags.p, true);
@@ -248,7 +254,7 @@ mod tests {
         assert_eq!(cpu.flags.s, false);
 
         cpu.flags.cy = true; //Regression: sub(A) should clear carry bit
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.a, 0x00);
         assert_eq!(cpu.flags.cy, false);
         assert_eq!(cpu.flags.p, true);
@@ -264,18 +270,35 @@ mod tests {
         ];
         let mut cpu = Cpu8080::new(&bytecode);
         cpu.a = 0x49;
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.a, 0x0f);
         assert_eq!(cpu.flags.cy, false);
         assert_eq!(cpu.flags.p, true);
         assert_eq!(cpu.flags.z, false);
         assert_eq!(cpu.flags.s, false);
 
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.a, 0x00);
         assert_eq!(cpu.flags.cy, false);
         assert_eq!(cpu.flags.p, true);
         assert_eq!(cpu.flags.z, true);
         assert_eq!(cpu.flags.s, false);
+    }
+
+    #[test]
+    fn rrc() {
+        let bytecode = [
+            0x0f, // RRC
+            0x0f, // RRC
+        ];
+        let mut cpu = Cpu8080::new(&bytecode);
+        cpu.a = 0xf2;
+        cpu.step();
+        assert_eq!(cpu.a, 0x79);
+        assert_eq!(cpu.flags.cy, false);
+        cpu.a = 0x11;
+        cpu.step();
+        assert_eq!(cpu.a, 0x88);
+        assert_eq!(cpu.flags.cy, true);
     }
 }

@@ -32,15 +32,15 @@ mod tests {
         ];
         let mut cpu = Cpu8080::new(&bytecode);
         cpu.a = 0x5f;
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.flags.z, false);
         assert_eq!(cpu.flags.s, true);
         assert_eq!(cpu.flags.cy, true);
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.flags.z, true);
         assert_eq!(cpu.flags.s, false);
         assert_eq!(cpu.flags.cy, false);
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.flags.z, false);
         assert_eq!(cpu.flags.s, false);
         assert_eq!(cpu.flags.cy, false);

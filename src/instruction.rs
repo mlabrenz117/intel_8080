@@ -109,13 +109,13 @@ impl Instruction {
 impl Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match (self.len(), self.opcode.num_registers()) {
-            (1, 0) => write!(f, "{}           ; ", self.opcode),
-            (1, 1) => write!(f, "{}          ; ", self.opcode),
-            (1, 2) => write!(f, "{}        ; ", self.opcode),
-            (2, 0) => write!(f, "{}{}       ; ", self.opcode, self.data),
-            (2, 1) => write!(f, "{}, {}    ; ", self.opcode, self.data),
-            (3, 0) => write!(f, "{}{}     ; ", self.opcode, self.data),
-            (3, 1) => write!(f, "{}, {}  ; ", self.opcode, self.data),
+            (1, 0) => write!(f, "{}           ", self.opcode),
+            (1, 1) => write!(f, "{}          ", self.opcode),
+            (1, 2) => write!(f, "{}        ", self.opcode),
+            (2, 0) => write!(f, "{}{}       ", self.opcode, self.data),
+            (2, 1) => write!(f, "{}, {}    ", self.opcode, self.data),
+            (3, 0) => write!(f, "{}{}     ", self.opcode, self.data),
+            (3, 1) => write!(f, "{}, {}  ", self.opcode, self.data),
             (_, _) => write!(f, ""),
         }
     }

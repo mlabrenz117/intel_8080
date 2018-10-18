@@ -1,6 +1,6 @@
 use crate::{
     cpu8080::Register,
-    instruction::{InstructionData, Opcode},
+    instruction::{Instruction, InstructionData, Opcode},
 };
 use failure::Fail;
 
@@ -21,8 +21,8 @@ pub enum EmulateError {
         data: InstructionData,
         opcode: Opcode,
     },
-    #[fail(display = "Instruciton not yet implemented: {:?}", opcode)]
-    UnimplementedInstruction { opcode: Opcode },
+    #[fail(display = "Instruciton not yet implemented: {}", instruction)]
+    UnimplementedInstruction { instruction: Instruction },
     #[fail(display = "{:?} is not an 8 bit register", register)]
     RegisterNot8Bit { register: Register },
     #[fail(display = "Stack Overflow")]

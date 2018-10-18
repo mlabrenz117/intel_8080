@@ -263,7 +263,7 @@ mod tests {
             0x31, 0xbb, 0xaa, //LXI SP, 0xaabb
         ];
         let mut cpu = Cpu8080::new(&bytecode);
-        cpu.start().unwrap();
+        cpu.run();
         assert_eq!(cpu.b, 0xbb);
         assert_eq!(cpu.c, 0xcc);
         assert_eq!(cpu.d, 0xdd);
@@ -285,9 +285,9 @@ mod tests {
         cpu.e = 0x01;
         cpu.memory[0x0000] = 0xaa;
         cpu.memory[0x0001] = 0xbb;
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.a, 0xaa);
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.a, 0xbb);
     }
 
@@ -303,11 +303,11 @@ mod tests {
         cpu.a = 0xaa;
         cpu.h = 0x20;
         cpu.memory[0x0000] = 0xcc;
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.b, 0xbd);
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.c, 0xcc);
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.memory[0x0000], 0xaa);
     }
 
@@ -318,7 +318,7 @@ mod tests {
             0x36, 0xff, //MVI M, 0xff
         ];
         let mut cpu = Cpu8080::new(&bytecode);
-        cpu.start().unwrap();
+        cpu.run();
         assert_eq!(cpu.h, 0x20);
         assert_eq!(cpu.memory[0], 0xff);
     }
@@ -337,7 +337,7 @@ mod tests {
         cpu.flags.cy = true;
         cpu.flags.z = true;
         cpu.flags.p = true;
-        cpu.start().unwrap();
+        cpu.run();
         assert_eq!(cpu.read_memory(0x2400 - 1), 0x8f);
         assert_eq!(cpu.read_memory(0x2400 - 2), 0x9d);
         assert_eq!(cpu.read_memory(0x2400 - 3), 0x1f);
@@ -360,12 +360,12 @@ mod tests {
         cpu.b = 0xbb;
         cpu.flags.cy = true;
         cpu.flags.p = true;
-        cpu.step().unwrap();
-        cpu.step().unwrap();
+        cpu.step();
+        cpu.step();
         cpu.flags = ConditionalFlags::new();
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(cpu.d, 0xbb);
-        cpu.step().unwrap();
+        cpu.step();
         assert_eq!(
             cpu.flags,
             ConditionalFlags {
@@ -387,7 +387,7 @@ mod tests {
         cpu.l = 0xff;
         cpu.d = 0x33;
         cpu.e = 0x55;
-        cpu.start().unwrap();
+        cpu.run();
         assert_eq!(cpu.h, 0x33);
         assert_eq!(cpu.l, 0x55);
         assert_eq!(cpu.d, 0x00);
