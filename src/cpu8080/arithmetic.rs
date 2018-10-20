@@ -2,7 +2,7 @@ use super::*;
 use crate::instruction::{InstructionData, Opcode};
 
 impl<'a> Cpu8080<'a> {
-    pub(super) fn inx(&mut self, register: Register) -> Result<(), EmulateError> {
+    pub(super) fn inx(&mut self, register: Register) -> Result<()> {
         if let Some(r2) = register.get_pair() {
             let low = self.get_8bit_register(r2).unwrap();
             let high = self.get_8bit_register(register).unwrap();
@@ -22,7 +22,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn dcr(&mut self, register: Register) -> Result<(), EmulateError> {
+    pub(super) fn dcr(&mut self, register: Register) -> Result<()> {
         let value = match register {
             Register::SP => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -47,7 +47,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn add(&mut self, register: Register) -> Result<(), EmulateError> {
+    pub(super) fn add(&mut self, register: Register) -> Result<()> {
         let (result, cy) = match register {
             Register::SP => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -80,7 +80,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn adi(&mut self, data: InstructionData) -> Result<(), EmulateError> {
+    pub(super) fn adi(&mut self, data: InstructionData) -> Result<()> {
         if let Some(value) = data.first() {
             let (result, cy) = self.get_8bit_register(Register::A)?.overflowing_add(value);
             self.flags.z = result == 0;
@@ -105,7 +105,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn dad(&mut self, reg: Register) -> Result<(), EmulateError> {
+    pub(super) fn dad(&mut self, reg: Register) -> Result<()> {
         let addend1 = self.m();
         let addend2 = match (reg, reg.get_pair()) {
             (_r, Some(r2)) => {
@@ -125,7 +125,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn sub(&mut self, register: Register) -> Result<(), EmulateError> {
+    pub(super) fn sub(&mut self, register: Register) -> Result<()> {
         let (result, cy) = match register {
             Register::SP => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -149,7 +149,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn sui(&mut self, data: InstructionData) -> Result<(), EmulateError> {
+    pub(super) fn sui(&mut self, data: InstructionData) -> Result<()> {
         if let Some(value) = data.first() {
             let (result, cy) = self.get_8bit_register(Register::A)?.complement_sub(value);
             self.flags.z = result == 0;
@@ -166,7 +166,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn rrc(&mut self) -> Result<(), EmulateError> {
+    pub(super) fn rrc(&mut self) -> Result<()> {
         self.set_8bit_register(Register::A, self.a.rotate_right(1));
         self.flags.cy = self.a & 0x80 != 0;
         Ok(())

@@ -1,6 +1,6 @@
 use crate::{
     cpu8080::error::EmulateError,
-    cpu8080::{concat_bytes, Cpu8080, Register},
+    cpu8080::{concat_bytes, Cpu8080, Register, Result},
     instruction::{InstructionData, Opcode},
 };
 
@@ -18,11 +18,7 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given registers A, C, E, L, or M.
-    pub(super) fn lxi(
-        &mut self,
-        register: Register,
-        data: InstructionData,
-    ) -> Result<(), EmulateError> {
+    pub(super) fn lxi(&mut self, register: Register, data: InstructionData) -> Result<()> {
         if let (Some(high), Some(low)) = data.tuple() {
             if let Some(r2) = register.get_pair() {
                 self.set_8bit_register(register, high);
@@ -44,6 +40,44 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
+    /// #LDA - Load Accumulator from Memory
+    ///
+    /// Opcodes: 0x3a,
+    /// Params: Two byte memory location following the opcode
+    ///
+    /// Loads the byte at the memory location given into the accumulator.
+    // TODO: WRITE TEST
+    pub(super) fn lda(&mut self, data: InstructionData) -> Result<()> {
+        if let Some(addr) = data.addr() {
+            self.set_8bit_register(Register::A, self.read_memory(addr));
+        } else {
+            return Err(EmulateError::InvalidInstructionData {
+                opcode: Opcode::LDA,
+                data,
+            });
+        }
+        Ok(())
+    }
+
+    /// #STA - Store Accumulator in Memory
+    ///
+    /// Opcodes: 0x32
+    /// Params: Two byte memory location following the opcode
+    ///
+    /// Stores the value in the accumulator into memory at the given address.
+    // TODO: WRITE TEST
+    pub(super) fn sta(&mut self, data: InstructionData) -> Result<()> {
+        if let Some(addr) = data.addr() {
+            self.write_memory(addr, self.a)?;
+        } else {
+            return Err(EmulateError::InvalidInstructionData {
+                opcode: Opcode::STA,
+                data,
+            });
+        }
+        Ok(())
+    }
+
     /// #LDAX - Load Accumulator
     ///
     /// Opcodes: 0x0a, 0x1a
@@ -54,7 +88,7 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given registers A, C, E, H, L, M, SP.
-    pub(super) fn ldax(&mut self, register: Register) -> Result<(), EmulateError> {
+    pub(super) fn ldax(&mut self, register: Register) -> Result<()> {
         let pair = match register {
             Register::B | Register::D => register.get_pair().unwrap(),
             _r => {
@@ -87,11 +121,7 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given register SP.
-    pub(super) fn mov(
-        &mut self,
-        destination: Register,
-        source: Register,
-    ) -> Result<(), EmulateError> {
+    pub(super) fn mov(&mut self, destination: Register, source: Register) -> Result<()> {
         match (destination, source) {
             (Register::SP, _) | (_, Register::SP) => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -125,11 +155,7 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given register SP.
-    pub(super) fn mvi(
-        &mut self,
-        register: Register,
-        data: InstructionData,
-    ) -> Result<(), EmulateError> {
+    pub(super) fn mvi(&mut self, register: Register, data: InstructionData) -> Result<()> {
         if let (Some(value), None) = data.tuple() {
             match register {
                 Register::SP => {
@@ -171,7 +197,7 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given registers A, C, E, L, or M
-    pub(super) fn push(&mut self, register: Register) -> Result<(), EmulateError> {
+    pub(super) fn push(&mut self, register: Register) -> Result<()> {
         match (register, register.get_pair()) {
             (_r, Some(r2)) => {
                 let value = concat_bytes(self.get_8bit_register(_r)?, self.get_8bit_register(r2)?);
@@ -205,7 +231,7 @@ impl<'a> Cpu8080<'a> {
     /// is indicated, then it is loaded into the conditional flags.
     ///
     /// The Stack Pointer is incremented by 2.
-    pub(super) fn pop(&mut self, register: Register) -> Result<(), EmulateError> {
+    pub(super) fn pop(&mut self, register: Register) -> Result<()> {
         use super::ConditionalFlags;
         match (register, register.get_pair()) {
             (_r, Some(r2)) => {
@@ -239,7 +265,7 @@ impl<'a> Cpu8080<'a> {
     /// held in the D and E registers.
     ///
     /// Condition flags affected: None,
-    pub(super) fn xchg(&mut self) -> Result<(), EmulateError> {
+    pub(super) fn xchg(&mut self) -> Result<()> {
         let l = self.l;
         let h = self.h;
         self.set_8bit_register(Register::L, self.e);

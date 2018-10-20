@@ -8,6 +8,8 @@ use self::program_counter::ProgramCounter;
 mod error;
 use self::error::EmulateError;
 
+pub type Result<T> = std::result::Result<T, EmulateError>;
+
 // Instruction Implementations
 mod arithmetic;
 mod branch;
@@ -32,6 +34,7 @@ pub struct Cpu8080<'a> {
     devices: [u8; 0xff],
     flags: ConditionalFlags,
     rc: [bool; 8],
+    interrupts_enabled: bool,
 }
 
 impl<'a> Cpu8080<'a> {
@@ -50,12 +53,12 @@ impl<'a> Cpu8080<'a> {
             memory: [0; 0xffff],
             devices: [0; 0xff],
             flags: ConditionalFlags::new(),
-            //int_enable: 1,
             rc: [false; 8],
+            interrupts_enabled: true,
         }
     }
 
-    pub fn emulate_instruction(&mut self, instruction: Instruction) -> Result<(), EmulateError> {
+    pub fn emulate_instruction(&mut self, instruction: Instruction) -> Result<()> {
         use self::Opcode::*;
         self.reset_rc();
         match instruction.opcode() {
@@ -63,6 +66,8 @@ impl<'a> Cpu8080<'a> {
             // Data transfer Instructions
             LXI(r) => self.lxi(r, instruction.data()),
             LDAX(r) => self.ldax(r),
+            LDA => self.lda(instruction.data()),
+            STA => self.sta(instruction.data()),
             MOV(d, s) => self.mov(d, s),
             MVI(r) => self.mvi(r, instruction.data()),
             XCHG => self.xchg(),
@@ -76,8 +81,12 @@ impl<'a> Cpu8080<'a> {
             DAD(r) => self.dad(r),
             SUB(r) => self.sub(r),
             SUI => self.sui(instruction.data()),
-            CPI => self.cpi(instruction.data()),
             RRC => self.rrc(),
+            // Logical Instructions
+            CPI => self.cpi(instruction.data()),
+            ANI => self.ani(instruction.data()),
+            ANA(r) => self.ana(r),
+            XRA(r) => self.xra(r),
             // IO Instructions
             OUT => self.out(instruction.data()),
             // Branch Instructions
@@ -85,6 +94,8 @@ impl<'a> Cpu8080<'a> {
             JNZ => self.jnz(instruction.data()),
             CALL => self.call(instruction.data()),
             RET => self.ret(),
+            // Special Instructions
+            EI => self.ei(),
             _op => return Err(EmulateError::UnimplementedInstruction { instruction }),
         }
     }
@@ -128,7 +139,7 @@ impl<'a> Cpu8080<'a> {
         };
     }
 
-    pub fn get_8bit_register(&self, register: Register) -> Result<u8, EmulateError> {
+    pub fn get_8bit_register(&self, register: Register) -> Result<u8> {
         match register {
             Register::A => Ok(self.a),
             Register::B => Ok(self.b),
@@ -170,7 +181,7 @@ impl<'a> Cpu8080<'a> {
         self.pc.addr = addr;
     }
 
-    pub fn push_u16(&mut self, value: u16) -> Result<(), EmulateError> {
+    pub fn push_u16(&mut self, value: u16) -> Result<()> {
         let loc_low = self.sp - 2;
         let loc_high = self.sp - 1;
         let (high, low) = split_bytes(value);
@@ -184,7 +195,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub fn push_u8(&mut self, value: u8) -> Result<(), EmulateError> {
+    pub fn push_u8(&mut self, value: u8) -> Result<()> {
         let loc = self.sp - 1;
         if loc < 0x2000 {
             return Err(EmulateError::StackOverflow);
@@ -195,14 +206,14 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub fn pop_u8(&mut self) -> Result<u8, EmulateError> {
+    pub fn pop_u8(&mut self) -> Result<u8> {
         let value = self.read_memory(self.sp);
         self.sp += 1;
         self.register_changed(Register::SP);
         Ok(value)
     }
 
-    pub fn pop_u16(&mut self) -> Result<u16, EmulateError> {
+    pub fn pop_u16(&mut self) -> Result<u16> {
         let low = self.read_memory(self.sp);
         let high = self.read_memory(self.sp + 1);
         self.sp += 2;
@@ -220,7 +231,7 @@ impl<'a> Cpu8080<'a> {
         }
     }
 
-    pub fn write_memory(&mut self, addr: u16, value: u8) -> Result<(), EmulateError> {
+    pub fn write_memory(&mut self, addr: u16, value: u8) -> Result<()> {
         match addr < 0x2000 {
             true => return Err(EmulateError::WriteToROM),
             false => {
@@ -302,6 +313,12 @@ impl ConditionalFlags {
             cy: false,
             ac: false,
         }
+    }
+
+    fn set_non_carry_flags(&mut self, value: u8) {
+        self.z = value == 0;
+        self.s = value & 0x80 != 0;
+        self.p = check_parity(value);
     }
 }
 

@@ -23,8 +23,11 @@ impl InstructionData {
         self.first
     }
 
-    pub fn second(&self) -> Option<u8> {
-        self.second
+    pub fn addr(&self) -> Option<u16> {
+        if let (Some(h), Some(l)) = self.tuple() {
+            return Some(concat_bytes(h, l));
+        }
+        None
     }
 
     pub fn tuple(&self) -> (Option<u8>, Option<u8>) {
