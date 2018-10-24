@@ -1,16 +1,22 @@
 use log::error;
 
-//use crate::game_pad::GamePad;
+mod game_pad;
+pub mod rom;
+mod vram;
+mod wram;
+
+use self::game_pad::GamePad;
+pub use self::rom::Rom;
+use self::vram::Vram;
+use self::wram::Wram;
+
 use crate::mem_map::*;
-use crate::rom::Rom;
-use crate::vram::Vram;
-use crate::wram::Wram;
 
 pub struct Interconnect {
     rom: Rom,
     wram: Wram,
     vram: Vram,
-    //game_pad: GamePad,
+    game_pad: GamePad,
 }
 
 impl Interconnect {
@@ -19,7 +25,7 @@ impl Interconnect {
             rom,
             wram: Wram::new(),
             vram: Vram::new(),
-            //game_pad: GamePad::new(),
+            game_pad: GamePad::new(),
         }
     }
 

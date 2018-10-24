@@ -19,7 +19,7 @@ impl I8080 {
     ///
     /// #Errors
     /// Fails if given registers A, C, E, L, or M.
-    pub(super) fn lxi(&mut self, register: Register, data: InstructionData) -> Result<()> {
+    pub(crate) fn lxi(&mut self, register: Register, data: InstructionData) -> Result<()> {
         if let (Some(high), Some(low)) = data.tuple() {
             if let Some(r2) = register.get_pair() {
                 self.set_8bit_register(register, high);
@@ -48,7 +48,7 @@ impl I8080 {
     ///
     /// Loads the byte at the memory location given into the accumulator.
     // TODO: WRITE TEST
-    pub(super) fn lda(&mut self, data: InstructionData, interconnect: &Interconnect) -> Result<()> {
+    pub(crate) fn lda(&mut self, data: InstructionData, interconnect: &Interconnect) -> Result<()> {
         if let Some(addr) = data.addr() {
             self.set_8bit_register(Register::A, interconnect.read_byte(addr));
         } else {
@@ -67,7 +67,7 @@ impl I8080 {
     ///
     /// Stores the value in the accumulator into memory at the given address.
     // TODO: WRITE TEST
-    pub(super) fn sta(
+    pub(crate) fn sta(
         &mut self,
         data: InstructionData,
         interconnect: &mut Interconnect,
@@ -93,7 +93,7 @@ impl I8080 {
     ///
     /// #Errors
     /// Fails if given registers A, C, E, H, L, M, SP.
-    pub(super) fn ldax(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
+    pub(crate) fn ldax(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
         let pair = match register {
             Register::B | Register::D => register.get_pair().unwrap(),
             _r => {
@@ -126,7 +126,7 @@ impl I8080 {
     ///
     /// #Errors
     /// Fails if given register SP.
-    pub(super) fn mov(
+    pub(crate) fn mov(
         &mut self,
         destination: Register,
         source: Register,
@@ -165,7 +165,7 @@ impl I8080 {
     ///
     /// #Errors
     /// Fails if given register SP.
-    pub(super) fn mvi(
+    pub(crate) fn mvi(
         &mut self,
         register: Register,
         data: InstructionData,
@@ -212,7 +212,7 @@ impl I8080 {
     ///
     /// #Errors
     /// Fails if given registers A, C, E, L, or M
-    pub(super) fn push(
+    pub(crate) fn push(
         &mut self,
         register: Register,
         interconnect: &mut Interconnect,
@@ -250,8 +250,8 @@ impl I8080 {
     /// is indicated, then it is loaded into the conditional flags.
     ///
     /// The Stack Pointer is incremented by 2.
-    pub(super) fn pop(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
-        use super::ConditionalFlags;
+    pub(crate) fn pop(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
+        use crate::i8080::flags::ConditionalFlags;
         match (register, register.get_pair()) {
             (_r, Some(r2)) => {
                 let low = self.pop_u8(interconnect)?;
@@ -284,7 +284,7 @@ impl I8080 {
     /// held in the D and E registers.
     ///
     /// Condition flags affected: None,
-    pub(super) fn xchg(&mut self) -> Result<()> {
+    pub(crate) fn xchg(&mut self) -> Result<()> {
         let l = self.l;
         let h = self.h;
         self.set_8bit_register(Register::L, self.e);

@@ -5,7 +5,7 @@ use crate::{
 use log::warn;
 
 impl I8080 {
-    pub(super) fn out(&mut self, data: InstructionData) -> Result<()> {
+    pub(crate) fn out(&mut self, data: InstructionData) -> Result<()> {
         if let Some(_device) = data.first() {
             // TODO: self.write_device(device, self.get_8bit_register(Register::A)?);
             warn!("Devices unimplemented");

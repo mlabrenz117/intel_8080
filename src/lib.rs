@@ -1,30 +1,24 @@
-#[macro_use]
-extern crate failure;
-
-pub(crate) mod mem_map;
-
-pub mod game_pad;
 pub mod i8080;
 pub mod instruction;
 pub mod interconnect;
-pub mod rom;
-pub mod vram;
-pub mod wram;
+
+pub(crate) mod mem_map;
 
 use log::error;
 
-use self::instruction::*;
-use self::rom::Rom;
+use self::i8080::I8080;
+use self::instruction::{Instruction, Opcode};
+use self::interconnect::{Interconnect, Rom};
 
-pub struct System {
-    cpu: i8080::I8080,
+pub struct Emulator {
+    cpu: I8080,
     interconnect: interconnect::Interconnect,
 }
 
-impl System {
-    pub fn new(rom: Rom) -> System {
-        System {
-            cpu: i8080::I8080::new(),
+impl Emulator {
+    pub fn new(rom: Rom) -> Emulator {
+        Emulator {
+            cpu: I8080::new(),
             interconnect: interconnect::Interconnect::new(rom),
         }
     }
@@ -53,6 +47,7 @@ impl System {
     }
 
     fn next_instruction(&self) -> Option<Instruction> {
+        use self::instruction::opcode::OpcodeSize;
         if (self.cpu.pc() as usize) >= self.interconnect.rom_len() {
             None
         } else {
@@ -72,5 +67,21 @@ impl System {
             };
             Some(instruction)
         }
+    }
+
+    pub fn cpu(&self) -> &I8080 {
+        &self.cpu
+    }
+
+    pub fn cpu_mut(&mut self) -> &mut I8080 {
+        &mut self.cpu
+    }
+
+    pub fn interconnect(&self) -> &Interconnect {
+        &self.interconnect
+    }
+
+    pub fn interconnect_mut(&mut self) -> &mut Interconnect {
+        &mut self.interconnect
     }
 }

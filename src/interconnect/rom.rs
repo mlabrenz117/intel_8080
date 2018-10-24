@@ -6,14 +6,14 @@ pub struct Rom {
 }
 
 impl Rom {
-    pub fn read_byte(&self, addr: u16) -> u8 {
+    pub(crate) fn read_byte(&self, addr: u16) -> u8 {
         self.bytes[addr as usize]
         //  let mask = (self.bytes.len() - 1) as u16;
         //  let addr = addr & mask;
         //  unsafe { *self.ptr.offset(addr as isize) }
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.bytes.len()
     }
 }

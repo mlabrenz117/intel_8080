@@ -1,10 +1,9 @@
-use super::{TwosComplement, I8080};
-use crate::i8080::{error::EmulateError, Register, Result};
+use crate::i8080::*;
 use crate::instruction::{InstructionData, Opcode};
 use crate::interconnect::Interconnect;
 
 impl I8080 {
-    pub(super) fn cpi(&mut self, data: InstructionData) -> Result<()> {
+    pub(crate) fn cpi(&mut self, data: InstructionData) -> Result<()> {
         if let Some(value) = data.first() {
             let (v, c) = self.a.complement_sub(value);
             self.flags.set_non_carry_flags(v);
@@ -18,7 +17,7 @@ impl I8080 {
         Ok(())
     }
 
-    pub(super) fn ani(&mut self, data: InstructionData) -> Result<()> {
+    pub(crate) fn ani(&mut self, data: InstructionData) -> Result<()> {
         if let Some(value) = data.first() {
             let result = self.get_8bit_register(Register::A)? & value;
             self.set_8bit_register(Register::A, result);
@@ -33,7 +32,7 @@ impl I8080 {
         Ok(())
     }
 
-    pub(super) fn ana(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
+    pub(crate) fn ana(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
         let value: u8 = match register {
             Register::SP => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -51,7 +50,7 @@ impl I8080 {
         Ok(())
     }
 
-    pub(super) fn xra(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
+    pub(crate) fn xra(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
         let value: u8 = match register {
             Register::SP => {
                 return Err(EmulateError::UnsupportedRegister {

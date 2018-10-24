@@ -3,19 +3,19 @@ use crate::interconnect::Interconnect;
 use log::info;
 use std::fmt::{self, Display};
 
+mod flags;
+pub use self::flags::ConditionalFlags;
+
+mod register;
+pub use self::register::Register;
+
 mod error;
 use self::error::EmulateError;
 
-pub type Result<T> = std::result::Result<T, EmulateError>;
+type Result<T> = std::result::Result<T, EmulateError>;
 
 // Instruction Implementations
-mod arithmetic;
-mod branch;
-mod data_transfer;
-mod io;
-mod logical;
-mod special;
-mod stack;
+mod implementations;
 
 pub struct I8080 {
     a: u8,
@@ -159,6 +159,14 @@ impl I8080 {
         self.pc
     }
 
+    pub fn flags(&self) -> ConditionalFlags {
+        self.flags
+    }
+
+    pub fn interrupts_enabled(&self) -> bool {
+        self.interrupts_enabled
+    }
+
     fn push_u16(&mut self, value: u16, interconnect: &mut Interconnect) -> Result<()> {
         let (high, low) = split_bytes(value);
         self.push_u8(high, interconnect)?;
@@ -223,121 +231,6 @@ pub(crate) fn split_bytes(bytes: u16) -> (u8, u8) {
 
 pub(crate) fn concat_bytes(high: u8, low: u8) -> u16 {
     (high as u16) << 8 | (low as u16)
-}
-
-pub(crate) fn check_parity(num: u8) -> bool {
-    let mut bytes = num;
-    let mut parity = 0;
-    while bytes > 0 {
-        parity ^= bytes % 2;
-        bytes >>= 1;
-    }
-    parity == 0
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-struct ConditionalFlags {
-    z: bool,
-    s: bool,
-    p: bool,
-    cy: bool,
-    ac: bool,
-}
-
-impl ConditionalFlags {
-    fn new() -> ConditionalFlags {
-        ConditionalFlags {
-            z: false,
-            s: false,
-            p: false,
-            cy: false,
-            ac: false,
-        }
-    }
-
-    fn set_non_carry_flags(&mut self, value: u8) {
-        self.z = value == 0;
-        self.s = value & 0x80 != 0;
-        self.p = check_parity(value);
-    }
-}
-
-impl From<ConditionalFlags> for u8 {
-    fn from(flag: ConditionalFlags) -> u8 {
-        let s = (flag.s as u8) << 7;
-        let z = (flag.z as u8) << 6;
-        let ac = (flag.ac as u8) << 4;
-        let p = (flag.p as u8) << 2;
-        let c = flag.cy as u8;
-        s | z | ac | p | c | 2
-    }
-}
-
-impl From<u8> for ConditionalFlags {
-    fn from(byte: u8) -> ConditionalFlags {
-        ConditionalFlags {
-            s: byte & 0x80 != 0x00,
-            z: byte & 0x40 != 0x00,
-            ac: byte & 0x10 != 0x00,
-            p: byte & 0x04 != 0x00,
-            cy: byte & 0x01 != 0x00,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Register {
-    A,
-    B,
-    C,
-    D,
-    E,
-    H,
-    L,
-    M,
-    SP,
-}
-
-impl Register {
-    pub fn get_pair(&self) -> Option<Register> {
-        match self {
-            Register::B => Some(Register::C),
-            Register::D => Some(Register::E),
-            Register::H => Some(Register::L),
-            _ => None,
-        }
-    }
-
-    pub fn is_8bit(&self) -> bool {
-        match self {
-            Register::A => true,
-            Register::B => true,
-            Register::C => true,
-            Register::D => true,
-            Register::E => true,
-            Register::H => true,
-            Register::L => true,
-            Register::M => false,
-            Register::SP => false,
-        }
-    }
-}
-
-impl Display for Register {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = match self {
-            Register::A => "A",
-            Register::B => "B",
-            Register::C => "C",
-            Register::D => "D",
-            Register::E => "E",
-            Register::H => "H",
-            Register::L => "L",
-            Register::M => "M",
-            Register::SP => "S",
-        };
-        write!(f, "{}", s)
-    }
 }
 
 trait TwosComplement<RHS = Self> {
