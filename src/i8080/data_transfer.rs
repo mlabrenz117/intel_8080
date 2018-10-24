@@ -1,10 +1,11 @@
 use crate::{
-    cpu8080::error::EmulateError,
-    cpu8080::{concat_bytes, Cpu8080, Register, Result},
+    i8080::error::EmulateError,
+    i8080::{concat_bytes, Register, Result, I8080},
     instruction::{InstructionData, Opcode},
+    interconnect::Interconnect,
 };
 
-impl<'a> Cpu8080<'a> {
+impl I8080 {
     /// #LXI - Load Register Pair Immediate
     ///
     /// Opcodes: 0x01, 0x11, 0x21, 0x31
@@ -47,9 +48,9 @@ impl<'a> Cpu8080<'a> {
     ///
     /// Loads the byte at the memory location given into the accumulator.
     // TODO: WRITE TEST
-    pub(super) fn lda(&mut self, data: InstructionData) -> Result<()> {
+    pub(super) fn lda(&mut self, data: InstructionData, interconnect: &Interconnect) -> Result<()> {
         if let Some(addr) = data.addr() {
-            self.set_8bit_register(Register::A, self.read_memory(addr));
+            self.set_8bit_register(Register::A, interconnect.read_byte(addr));
         } else {
             return Err(EmulateError::InvalidInstructionData {
                 opcode: Opcode::LDA,
@@ -66,9 +67,13 @@ impl<'a> Cpu8080<'a> {
     ///
     /// Stores the value in the accumulator into memory at the given address.
     // TODO: WRITE TEST
-    pub(super) fn sta(&mut self, data: InstructionData) -> Result<()> {
+    pub(super) fn sta(
+        &mut self,
+        data: InstructionData,
+        interconnect: &mut Interconnect,
+    ) -> Result<()> {
         if let Some(addr) = data.addr() {
-            self.write_memory(addr, self.a)?;
+            interconnect.write_byte(addr, self.a);
         } else {
             return Err(EmulateError::InvalidInstructionData {
                 opcode: Opcode::STA,
@@ -88,7 +93,7 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given registers A, C, E, H, L, M, SP.
-    pub(super) fn ldax(&mut self, register: Register) -> Result<()> {
+    pub(super) fn ldax(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
         let pair = match register {
             Register::B | Register::D => register.get_pair().unwrap(),
             _r => {
@@ -102,7 +107,7 @@ impl<'a> Cpu8080<'a> {
             self.get_8bit_register(register)?,
             self.get_8bit_register(pair)?,
         );
-        let value = self.read_memory(loc);
+        let value = interconnect.read_byte(loc);
         self.set_8bit_register(Register::A, value);
         Ok(())
     }
@@ -121,7 +126,12 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given register SP.
-    pub(super) fn mov(&mut self, destination: Register, source: Register) -> Result<()> {
+    pub(super) fn mov(
+        &mut self,
+        destination: Register,
+        source: Register,
+        interconnect: &mut Interconnect,
+    ) -> Result<()> {
         match (destination, source) {
             (Register::SP, _) | (_, Register::SP) => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -134,11 +144,11 @@ impl<'a> Cpu8080<'a> {
                 if _r == Register::M {
                     return Ok(());
                 };
-                self.write_memory(addr, self.get_8bit_register(_r)?)?;
+                interconnect.write_byte(addr, self.get_8bit_register(_r)?);
             }
             (_r, Register::M) => {
                 let addr = self.m();
-                self.set_8bit_register(_r, self.read_memory(addr));
+                self.set_8bit_register(_r, interconnect.read_byte(addr));
             }
             (_r1, _r2) => self.set_8bit_register(_r1, self.get_8bit_register(_r2)?),
         }
@@ -155,7 +165,12 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given register SP.
-    pub(super) fn mvi(&mut self, register: Register, data: InstructionData) -> Result<()> {
+    pub(super) fn mvi(
+        &mut self,
+        register: Register,
+        data: InstructionData,
+        interconnect: &mut Interconnect,
+    ) -> Result<()> {
         if let (Some(value), None) = data.tuple() {
             match register {
                 Register::SP => {
@@ -165,7 +180,7 @@ impl<'a> Cpu8080<'a> {
                     })
                 }
                 Register::M => {
-                    self.write_memory(self.m(), value)?;
+                    interconnect.write_byte(self.m(), value);
                 }
                 _r => {
                     self.set_8bit_register(register, value);
@@ -197,16 +212,20 @@ impl<'a> Cpu8080<'a> {
     ///
     /// #Errors
     /// Fails if given registers A, C, E, L, or M
-    pub(super) fn push(&mut self, register: Register) -> Result<()> {
+    pub(super) fn push(
+        &mut self,
+        register: Register,
+        interconnect: &mut Interconnect,
+    ) -> Result<()> {
         match (register, register.get_pair()) {
             (_r, Some(r2)) => {
                 let value = concat_bytes(self.get_8bit_register(_r)?, self.get_8bit_register(r2)?);
-                self.push_u16(value)?;
+                self.push_u16(value, interconnect)?;
             }
             (Register::A, None) => {
                 let value =
                     concat_bytes(self.get_8bit_register(Register::A)?, u8::from(self.flags));
-                self.push_u16(value)?;
+                self.push_u16(value, interconnect)?;
             }
             (_r, _) => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -231,18 +250,18 @@ impl<'a> Cpu8080<'a> {
     /// is indicated, then it is loaded into the conditional flags.
     ///
     /// The Stack Pointer is incremented by 2.
-    pub(super) fn pop(&mut self, register: Register) -> Result<()> {
+    pub(super) fn pop(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
         use super::ConditionalFlags;
         match (register, register.get_pair()) {
             (_r, Some(r2)) => {
-                let low = self.pop_u8()?;
-                let high = self.pop_u8()?;
+                let low = self.pop_u8(interconnect)?;
+                let high = self.pop_u8(interconnect)?;
                 self.set_8bit_register(_r, high);
                 self.set_8bit_register(r2, low);
             }
             (Register::A, None) => {
-                let flags = self.pop_u8()?;
-                let a = self.pop_u8()?;
+                let flags = self.pop_u8(interconnect)?;
+                let a = self.pop_u8(interconnect)?;
                 self.flags = ConditionalFlags::from(flags);
                 self.set_8bit_register(Register::A, a);
             }

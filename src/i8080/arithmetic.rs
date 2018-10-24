@@ -1,7 +1,8 @@
 use super::*;
 use crate::instruction::{InstructionData, Opcode};
+use crate::interconnect::Interconnect;
 
-impl<'a> Cpu8080<'a> {
+impl I8080 {
     pub(super) fn inx(&mut self, register: Register) -> Result<()> {
         if let Some(r2) = register.get_pair() {
             let low = self.get_8bit_register(r2).unwrap();
@@ -22,7 +23,11 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn dcr(&mut self, register: Register) -> Result<()> {
+    pub(super) fn dcr(
+        &mut self,
+        register: Register,
+        interconnect: &mut Interconnect,
+    ) -> Result<()> {
         let value = match register {
             Register::SP => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -31,8 +36,8 @@ impl<'a> Cpu8080<'a> {
                 })
             }
             Register::M => {
-                let (v, _c) = self.read_memory(self.m()).complement_sub(1);
-                self.write_memory(self.m(), v)?;
+                let (v, _c) = interconnect.read_byte(self.m()).complement_sub(1);
+                interconnect.write_byte(self.m(), v);
                 v
             }
             _r => {
@@ -47,7 +52,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn add(&mut self, register: Register) -> Result<()> {
+    pub(super) fn add(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
         let (result, cy) = match register {
             Register::SP => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -57,7 +62,7 @@ impl<'a> Cpu8080<'a> {
             }
             Register::M => self
                 .get_8bit_register(Register::A)?
-                .overflowing_add(self.read_memory(self.m())),
+                .overflowing_add(interconnect.read_byte(self.m())),
             _r => self
                 .get_8bit_register(Register::A)?
                 .overflowing_add(self.get_8bit_register(_r)?),
@@ -125,7 +130,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn sub(&mut self, register: Register) -> Result<()> {
+    pub(super) fn sub(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
         let (result, cy) = match register {
             Register::SP => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -135,7 +140,7 @@ impl<'a> Cpu8080<'a> {
             }
             Register::M => self
                 .get_8bit_register(Register::A)?
-                .complement_sub(self.read_memory(self.m())),
+                .complement_sub(interconnect.read_byte(self.m())),
             _r => self
                 .get_8bit_register(Register::A)?
                 .complement_sub(self.get_8bit_register(_r)?),

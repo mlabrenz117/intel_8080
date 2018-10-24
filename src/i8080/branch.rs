@@ -1,11 +1,12 @@
-use super::{concat_bytes, error::EmulateError, Cpu8080, Result};
+use super::{concat_bytes, error::EmulateError, Result, I8080};
 use crate::instruction::{InstructionData, Opcode};
+use crate::interconnect::Interconnect;
 
-impl<'a> Cpu8080<'a> {
+impl I8080 {
     pub(super) fn jmp(&mut self, data: InstructionData) -> Result<()> {
         if let (Some(hi), Some(lo)) = data.tuple() {
             let addr = concat_bytes(hi, lo);
-            self.pc.addr = addr;
+            self.pc = addr;
         } else {
             return Err(EmulateError::InvalidInstructionData {
                 opcode: Opcode::JMP,
@@ -22,11 +23,15 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn call(&mut self, data: InstructionData) -> Result<()> {
+    pub(super) fn call(
+        &mut self,
+        data: InstructionData,
+        interconnect: &mut Interconnect,
+    ) -> Result<()> {
         if let (Some(hi), Some(lo)) = data.tuple() {
             let addr = concat_bytes(hi, lo);
-            self.push_u16(self.pc.addr)?;
-            self.pc.addr = addr;
+            self.push_u16(self.pc, interconnect)?;
+            self.pc = addr;
         } else {
             return Err(EmulateError::InvalidInstructionData {
                 opcode: Opcode::CALL,
@@ -36,9 +41,9 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn ret(&mut self) -> Result<()> {
-        let addr = self.pop_u16()?;
-        self.pc.addr = addr;
+    pub(super) fn ret(&mut self, interconnect: &mut Interconnect) -> Result<()> {
+        let addr = self.pop_u16(interconnect)?;
+        self.pc = addr;
         Ok(())
     }
 }

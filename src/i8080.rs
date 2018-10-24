@@ -1,9 +1,7 @@
 use crate::instruction::{Instruction, Opcode};
-use log::{error, info};
+use crate::interconnect::Interconnect;
+use log::info;
 use std::fmt::{self, Display};
-
-mod program_counter;
-use self::program_counter::ProgramCounter;
 
 mod error;
 use self::error::EmulateError;
@@ -19,7 +17,7 @@ mod logical;
 mod special;
 mod stack;
 
-pub struct Cpu8080<'a> {
+pub struct I8080 {
     a: u8,
     b: u8,
     c: u8,
@@ -28,18 +26,15 @@ pub struct Cpu8080<'a> {
     h: u8,
     l: u8,
     sp: u16,
-    pc: ProgramCounter<'a>,
-    rom: &'a [u8],
-    memory: [u8; 0xffff],
-    devices: [u8; 0xff],
+    pc: u16,
     flags: ConditionalFlags,
     rc: [bool; 8],
     interrupts_enabled: bool,
 }
 
-impl<'a> Cpu8080<'a> {
-    pub fn new(buf: &'a [u8]) -> Cpu8080 {
-        Cpu8080 {
+impl I8080 {
+    pub fn new() -> I8080 {
+        I8080 {
             a: 0,
             b: 0,
             c: 0,
@@ -48,80 +43,67 @@ impl<'a> Cpu8080<'a> {
             h: 0,
             l: 0,
             sp: 0,
-            pc: ProgramCounter::new(buf),
-            rom: buf,
-            memory: [0; 0xffff],
-            devices: [0; 0xff],
+            pc: 0,
             flags: ConditionalFlags::new(),
             rc: [false; 8],
             interrupts_enabled: true,
         }
     }
 
-    pub fn emulate_instruction(&mut self, instruction: Instruction) -> Result<()> {
+    pub fn emulate_instruction(
+        &mut self,
+        instruction: Instruction,
+        ic: &mut Interconnect,
+    ) -> Result<()> {
+        let old_pc = self.pc;
+        self.pc += instruction.len();
         use self::Opcode::*;
         self.reset_rc();
-        match instruction.opcode() {
+        let r = match instruction.opcode() {
             NOP => Ok(()),
             // Data transfer Instructions
             LXI(r) => self.lxi(r, instruction.data()),
-            LDAX(r) => self.ldax(r),
-            LDA => self.lda(instruction.data()),
-            STA => self.sta(instruction.data()),
-            MOV(d, s) => self.mov(d, s),
-            MVI(r) => self.mvi(r, instruction.data()),
+            LDAX(r) => self.ldax(r, ic),
+            LDA => self.lda(instruction.data(), ic),
+            STA => self.sta(instruction.data(), ic),
+            MOV(d, s) => self.mov(d, s, ic),
+            MVI(r) => self.mvi(r, instruction.data(), ic),
             XCHG => self.xchg(),
-            PUSH(r) => self.push(r),
-            POP(r) => self.pop(r),
+            PUSH(r) => self.push(r, ic),
+            POP(r) => self.pop(r, ic),
             // Arithmetic Instructions
             INX(r) => self.inx(r),
-            DCR(r) => self.dcr(r),
-            ADD(r) => self.add(r),
+            DCR(r) => self.dcr(r, ic),
+            ADD(r) => self.add(r, ic),
             ADI => self.adi(instruction.data()),
             DAD(r) => self.dad(r),
-            SUB(r) => self.sub(r),
+            SUB(r) => self.sub(r, ic),
             SUI => self.sui(instruction.data()),
             RRC => self.rrc(),
             // Logical Instructions
             CPI => self.cpi(instruction.data()),
             ANI => self.ani(instruction.data()),
-            ANA(r) => self.ana(r),
-            XRA(r) => self.xra(r),
+            ANA(r) => self.ana(r, ic),
+            XRA(r) => self.xra(r, ic),
             // IO Instructions
             OUT => self.out(instruction.data()),
             // Branch Instructions
             JMP => self.jmp(instruction.data()),
             JNZ => self.jnz(instruction.data()),
-            CALL => self.call(instruction.data()),
-            RET => self.ret(),
+            CALL => self.call(instruction.data(), ic),
+            RET => self.ret(ic),
             // Special Instructions
             EI => self.ei(),
             _op => return Err(EmulateError::UnimplementedInstruction { instruction }),
+        };
+
+        if let Ok(()) = r {
+            info!("{}: {}; {}", old_pc, instruction, self);
         }
+        r
     }
 
-    pub fn run(&mut self) {
-        while let Some(instruction) = self.pc.next() {
-            if let Err(e) = self.emulate_instruction(instruction) {
-                error!("{}", e);
-                break;
-            } else {
-                info!("{}: {}; {}", self.pc, instruction, self);
-            }
-        }
-    }
-
-    pub fn step(&mut self) {
-        if let Some(instruction) = self.pc.next() {
-            if let Err(e) = self.emulate_instruction(instruction) {
-                error!("{}", e);
-            } else {
-                info!("{}: {}{}", self.pc, instruction, self);
-            }
-        }
-    }
-
-    pub fn set_8bit_register(&mut self, register: Register, value: u8) {
+    fn set_8bit_register(&mut self, register: Register, value: u8) {
         self.register_changed(register);
         match register {
             Register::A => self.a = value,
@@ -158,7 +140,7 @@ impl<'a> Cpu8080<'a> {
         high << 8 | low
     }
 
-    pub fn set_m(&mut self, addr: u16) {
+    fn set_m(&mut self, addr: u16) {
         let (high, low) = split_bytes(addr);
         self.set_8bit_register(Register::H, high);
         self.set_8bit_register(Register::L, low);
@@ -174,80 +156,38 @@ impl<'a> Cpu8080<'a> {
     }
 
     pub fn pc(&self) -> u16 {
-        self.pc.addr
+        self.pc
     }
 
-    pub fn set_pc(&mut self, addr: u16) {
-        self.pc.addr = addr;
-    }
-
-    pub fn push_u16(&mut self, value: u16) -> Result<()> {
-        let loc_low = self.sp - 2;
-        let loc_high = self.sp - 1;
+    fn push_u16(&mut self, value: u16, interconnect: &mut Interconnect) -> Result<()> {
         let (high, low) = split_bytes(value);
-        if loc_low < 0x2000 {
-            return Err(EmulateError::StackOverflow);
-        };
-        self.write_memory(loc_low, low)?;
-        self.write_memory(loc_high, high)?;
-        self.sp -= 2;
-        self.register_changed(Register::SP);
+        self.push_u8(high, interconnect)?;
+        self.push_u8(low, interconnect)?;
         Ok(())
     }
 
-    pub fn push_u8(&mut self, value: u8) -> Result<()> {
+    fn push_u8(&mut self, value: u8, interconnect: &mut Interconnect) -> Result<()> {
         let loc = self.sp - 1;
         if loc < 0x2000 {
             return Err(EmulateError::StackOverflow);
         };
-        self.write_memory(loc, value)?;
+        interconnect.write_byte(loc, value);
         self.sp -= 1;
         self.register_changed(Register::SP);
         Ok(())
     }
 
-    pub fn pop_u8(&mut self) -> Result<u8> {
-        let value = self.read_memory(self.sp);
+    fn pop_u8(&mut self, interconnect: &Interconnect) -> Result<u8> {
+        let value = interconnect.read_byte(self.sp);
         self.sp += 1;
         self.register_changed(Register::SP);
         Ok(value)
     }
 
-    pub fn pop_u16(&mut self) -> Result<u16> {
-        let low = self.read_memory(self.sp);
-        let high = self.read_memory(self.sp + 1);
-        self.sp += 2;
-        self.register_changed(Register::SP);
+    fn pop_u16(&mut self, interconnect: &Interconnect) -> Result<u16> {
+        let low = self.pop_u8(interconnect)?;
+        let high = self.pop_u8(interconnect)?;
         Ok(concat_bytes(high, low))
-    }
-
-    pub fn read_memory(&self, addr: u16) -> u8 {
-        match addr < 0x2000 {
-            true => self.rom[addr as usize],
-            false => {
-                let addr = addr - 0x2000;
-                self.memory[addr as usize]
-            }
-        }
-    }
-
-    pub fn write_memory(&mut self, addr: u16, value: u8) -> Result<()> {
-        match addr < 0x2000 {
-            true => return Err(EmulateError::WriteToROM),
-            false => {
-                let addr = addr - 0x2000;
-                self.memory[addr as usize] = value;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn write_device(&mut self, device: u8, value: u8) {
-        self.devices[device as usize] = value;
-    }
-
-    pub fn read_device(&self, device: u8) -> u8 {
-        self.devices[device as usize]
     }
 
     fn register_changed(&mut self, reg: Register) {
@@ -414,7 +354,7 @@ impl TwosComplement for u8 {
     }
 }
 
-impl<'a> Display for Cpu8080<'a> {
+impl Display for I8080 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use colored::*;
         let a = match self.rc[0] {

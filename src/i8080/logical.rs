@@ -1,8 +1,9 @@
-use super::{Cpu8080, TwosComplement};
-use crate::cpu8080::{error::EmulateError, Register, Result};
+use super::{TwosComplement, I8080};
+use crate::i8080::{error::EmulateError, Register, Result};
 use crate::instruction::{InstructionData, Opcode};
+use crate::interconnect::Interconnect;
 
-impl<'a> Cpu8080<'a> {
+impl I8080 {
     pub(super) fn cpi(&mut self, data: InstructionData) -> Result<()> {
         if let Some(value) = data.first() {
             let (v, c) = self.a.complement_sub(value);
@@ -32,7 +33,7 @@ impl<'a> Cpu8080<'a> {
         Ok(())
     }
 
-    pub(super) fn ana(&mut self, register: Register) -> Result<()> {
+    pub(super) fn ana(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
         let value: u8 = match register {
             Register::SP => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -40,7 +41,7 @@ impl<'a> Cpu8080<'a> {
                     register,
                 })
             }
-            Register::M => self.read_memory(self.m()),
+            Register::M => interconnect.read_byte(self.m()),
             _r => self.get_8bit_register(_r)?,
         };
         let result = self.a & value;
@@ -49,7 +50,8 @@ impl<'a> Cpu8080<'a> {
         self.set_8bit_register(Register::A, result);
         Ok(())
     }
-    pub(super) fn xra(&mut self, register: Register) -> Result<()> {
+
+    pub(super) fn xra(&mut self, register: Register, interconnect: &Interconnect) -> Result<()> {
         let value: u8 = match register {
             Register::SP => {
                 return Err(EmulateError::UnsupportedRegister {
@@ -57,7 +59,7 @@ impl<'a> Cpu8080<'a> {
                     register,
                 })
             }
-            Register::M => self.read_memory(self.m()),
+            Register::M => interconnect.read_byte(self.m()),
             _r => self.get_8bit_register(_r)?,
         };
         let result = self.a ^ value;

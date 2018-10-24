@@ -1,5 +1,5 @@
 use crate::{
-    cpu8080::Register,
+    i8080::Register,
     instruction::{Instruction, InstructionData, Opcode},
 };
 use failure::Fail;

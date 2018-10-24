@@ -1,4 +1,4 @@
-use crate::cpu8080::{concat_bytes, split_bytes, Register};
+use crate::i8080::{concat_bytes, split_bytes, Register};
 use failure::Error;
 use std::fmt::{self, Display};
 
