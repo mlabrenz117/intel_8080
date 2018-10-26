@@ -77,3 +77,31 @@ impl From<u8> for ConditionalFlags {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ConditionalFlags;
+    #[test]
+    fn can_test_parity() {
+        let odd = 0x5b; // 91
+        assert_eq!(ConditionalFlags::check_parity(odd), false);
+        let even = 0x9f; // 159
+        assert_eq!(ConditionalFlags::check_parity(even), true);
+    }
+
+    #[test]
+    fn flags_as_bytes() {
+        let mut f = ConditionalFlags::new();
+        assert_eq!(u8::from(f), 0x02);
+        f.s = true;
+        assert_eq!(u8::from(f), 0x82);
+        f.z = true;
+        assert_eq!(u8::from(f), 0xc2);
+        f.ac = true;
+        assert_eq!(u8::from(f), 0xd2);
+        f.p = true;
+        assert_eq!(u8::from(f), 0xd6);
+        f.cy = true;
+        assert_eq!(u8::from(f), 0xd7);
+    }
+}

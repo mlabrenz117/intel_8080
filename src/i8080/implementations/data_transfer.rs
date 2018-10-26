@@ -297,7 +297,8 @@ impl I8080 {
 
 #[cfg(test)]
 mod tests {
-    use super::Cpu8080;
+    use crate::interconnect::Rom;
+    use crate::Emulator;
 
     #[test]
     fn lxi() {
@@ -307,15 +308,15 @@ mod tests {
             0x21, 0x11, 0xff, //LXI H, 0xff11
             0x31, 0xbb, 0xaa, //LXI SP, 0xaabb
         ];
-        let mut cpu = Cpu8080::new(&bytecode);
-        cpu.run();
-        assert_eq!(cpu.b, 0xbb);
-        assert_eq!(cpu.c, 0xcc);
-        assert_eq!(cpu.d, 0xdd);
-        assert_eq!(cpu.e, 0xee);
-        assert_eq!(cpu.h, 0xff);
-        assert_eq!(cpu.l, 0x11);
-        assert_eq!(cpu.sp, 0xaabb);
+        let mut system = Emulator::new(Rom::from(&bytecode));
+        system.run();
+        assert_eq!(system.cpu.b, 0xbb);
+        assert_eq!(system.cpu.c, 0xcc);
+        assert_eq!(system.cpu.d, 0xdd);
+        assert_eq!(system.cpu.e, 0xee);
+        assert_eq!(system.cpu.h, 0xff);
+        assert_eq!(system.cpu.l, 0x11);
+        assert_eq!(system.cpu.sp, 0xaabb);
     }
 
     #[test]
@@ -324,16 +325,16 @@ mod tests {
             0x0a, // LDAX B
             0x1a, // LDAX D
         ];
-        let mut cpu = Cpu8080::new(&bytecode);
-        cpu.b = 0x20;
-        cpu.d = 0x20;
-        cpu.e = 0x01;
-        cpu.memory[0x0000] = 0xaa;
-        cpu.memory[0x0001] = 0xbb;
-        cpu.step();
-        assert_eq!(cpu.a, 0xaa);
-        cpu.step();
-        assert_eq!(cpu.a, 0xbb);
+        let mut system = Emulator::new(&bytecode);
+        system.cpu.b = 0x20;
+        system.cpu.d = 0x20;
+        system.cpu.e = 0x01;
+        system.interconnect.write_byte(0x2000, 0xaa);
+        system.interconnect.write_byte(0x2001, 0xbb);
+        system.step();
+        assert_eq!(system.cpu.a, 0xaa);
+        system.step();
+        assert_eq!(system.cpu.a, 0xbb);
     }
 
     #[test]
@@ -343,17 +344,17 @@ mod tests {
             0x4e, // MOV(C,M)
             0x77, // MOV(M,A)
         ];
-        let mut cpu = Cpu8080::new(&bytecode);
-        cpu.d = 0xbd;
-        cpu.a = 0xaa;
-        cpu.h = 0x20;
-        cpu.memory[0x0000] = 0xcc;
-        cpu.step();
-        assert_eq!(cpu.b, 0xbd);
-        cpu.step();
-        assert_eq!(cpu.c, 0xcc);
-        cpu.step();
-        assert_eq!(cpu.memory[0x0000], 0xaa);
+        let mut system = Emulator::new(&bytecode);
+        system.cpu.d = 0xbd;
+        system.cpu.a = 0xaa;
+        system.cpu.h = 0x20;
+        system.interconnect.write_byte(0x2000, 0xcc);
+        system.step();
+        assert_eq!(system.cpu.b, 0xbd);
+        system.step();
+        assert_eq!(system.cpu.c, 0xcc);
+        system.step();
+        assert_eq!(system.interconnect.read_byte(0x2000), 0xaa);
     }
 
     #[test]
@@ -362,10 +363,10 @@ mod tests {
             0x26, 0x20, //MVI H, 0x20
             0x36, 0xff, //MVI M, 0xff
         ];
-        let mut cpu = Cpu8080::new(&bytecode);
-        cpu.run();
-        assert_eq!(cpu.h, 0x20);
-        assert_eq!(cpu.memory[0], 0xff);
+        let mut system = Emulator::new(&bytecode);
+        system.run();
+        assert_eq!(system.cpu.h, 0x20);
+        assert_eq!(system.interconnect.read_byte(0x2000), 0xff);
     }
 
     #[test]
@@ -374,45 +375,45 @@ mod tests {
             0xd5, // PUSH D
             0xf5, // PUSH PSW
         ];
-        let mut cpu = Cpu8080::new(&bytecode);
-        cpu.sp = 0x2400;
-        cpu.d = 0x8f;
-        cpu.e = 0x9d;
-        cpu.a = 0x1f;
-        cpu.flags.cy = true;
-        cpu.flags.z = true;
-        cpu.flags.p = true;
-        cpu.run();
-        assert_eq!(cpu.read_memory(0x2400 - 1), 0x8f);
-        assert_eq!(cpu.read_memory(0x2400 - 2), 0x9d);
-        assert_eq!(cpu.read_memory(0x2400 - 3), 0x1f);
-        assert_eq!(cpu.read_memory(0x2400 - 4), 0x47);
-        assert_eq!(cpu.sp, 0x2400 - 4);
+        let mut system = Emulator::new(&bytecode);
+        system.cpu.sp = 0x2400;
+        system.cpu.d = 0x8f;
+        system.cpu.e = 0x9d;
+        system.cpu.a = 0x1f;
+        system.cpu.flags.cy = true;
+        system.cpu.flags.z = true;
+        system.cpu.flags.p = true;
+        system.run();
+        assert_eq!(system.interconnect.read_byte(0x2400 - 1), 0x8f);
+        assert_eq!(system.interconnect.read_byte(0x2400 - 2), 0x9d);
+        assert_eq!(system.interconnect.read_byte(0x2400 - 3), 0x1f);
+        assert_eq!(system.interconnect.read_byte(0x2400 - 4), 0x47);
+        assert_eq!(system.cpu.sp, 0x2400 - 4);
     }
 
     #[test]
     fn pop() {
-        use crate::cpu8080::ConditionalFlags;
+        use crate::i8080::ConditionalFlags;
         let bytecode = [
             0xf5, // PUSH PSW
             0xc5, // PUSH B
             0xd1, // POP D
             0xf1, // POP PSW
         ];
-        let mut cpu = Cpu8080::new(&bytecode);
-        cpu.sp = 0x2400;
-        cpu.a = 0xaa;
-        cpu.b = 0xbb;
-        cpu.flags.cy = true;
-        cpu.flags.p = true;
-        cpu.step();
-        cpu.step();
-        cpu.flags = ConditionalFlags::new();
-        cpu.step();
-        assert_eq!(cpu.d, 0xbb);
-        cpu.step();
+        let mut system = Emulator::new(&bytecode);
+        system.cpu.sp = 0x2400;
+        system.cpu.a = 0xaa;
+        system.cpu.b = 0xbb;
+        system.cpu.flags.cy = true;
+        system.cpu.flags.p = true;
+        system.step();
+        system.step();
+        system.cpu.flags = ConditionalFlags::new();
+        system.step();
+        assert_eq!(system.cpu.d, 0xbb);
+        system.step();
         assert_eq!(
-            cpu.flags,
+            system.cpu.flags,
             ConditionalFlags {
                 z: false,
                 s: false,
@@ -421,21 +422,21 @@ mod tests {
                 cy: true
             }
         );
-        assert_eq!(cpu.sp, 0x2400);
+        assert_eq!(system.cpu.sp, 0x2400);
     }
 
     #[test]
     fn xchg() {
         let bytecode = [0xeb];
-        let mut cpu = Cpu8080::new(&bytecode);
-        cpu.h = 0x00;
-        cpu.l = 0xff;
-        cpu.d = 0x33;
-        cpu.e = 0x55;
-        cpu.run();
-        assert_eq!(cpu.h, 0x33);
-        assert_eq!(cpu.l, 0x55);
-        assert_eq!(cpu.d, 0x00);
-        assert_eq!(cpu.e, 0xff);
+        let mut system = Emulator::new(&bytecode);
+        system.cpu.h = 0x00;
+        system.cpu.l = 0xff;
+        system.cpu.d = 0x33;
+        system.cpu.e = 0x55;
+        system.run();
+        assert_eq!(system.cpu.h, 0x33);
+        assert_eq!(system.cpu.l, 0x55);
+        assert_eq!(system.cpu.d, 0x00);
+        assert_eq!(system.cpu.e, 0xff);
     }
 }

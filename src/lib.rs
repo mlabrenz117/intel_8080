@@ -10,16 +10,18 @@ use self::i8080::I8080;
 use self::instruction::{Instruction, Opcode};
 use self::interconnect::{Interconnect, Rom};
 
+use failure::Error;
+
 pub struct Emulator {
     cpu: I8080,
-    interconnect: interconnect::Interconnect,
+    interconnect: Interconnect,
 }
 
 impl Emulator {
-    pub fn new(rom: Rom) -> Emulator {
+    pub fn new<T: Into<Rom>>(rom: T) -> Emulator {
         Emulator {
             cpu: I8080::new(),
-            interconnect: interconnect::Interconnect::new(rom),
+            interconnect: Interconnect::new(rom.into()),
         }
     }
 
@@ -34,6 +36,14 @@ impl Emulator {
         }
     }
 
+    pub fn try_step(&mut self) -> Result<(), Error> {
+        if let Some(instruction) = self.next_instruction() {
+            self.cpu
+                .emulate_instruction(instruction, &mut self.interconnect)?;
+        }
+        Ok(())
+    }
+
     pub fn run(&mut self) {
         while let Some(instruction) = self.next_instruction() {
             if let Err(e) = self
@@ -44,6 +54,14 @@ impl Emulator {
                 break;
             }
         }
+    }
+
+    pub fn try_run(&mut self) -> Result<(), Error> {
+        while let Some(instruction) = self.next_instruction() {
+            self.cpu
+                .emulate_instruction(instruction, &mut self.interconnect)?
+        }
+        Ok(())
     }
 
     fn next_instruction(&self) -> Option<Instruction> {

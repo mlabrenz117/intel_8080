@@ -153,9 +153,10 @@ impl I8080 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::cpu8080::Cpu8080;
+    use crate::i8080::*;
+    use crate::Emulator;
     use std::u8;
+
     #[test]
     fn overflow_sub() {
         let m: u8 = 0x3e;
@@ -174,22 +175,22 @@ mod tests {
             0x80, // ADD B
             0x87, // ADD A
         ];
-        let mut cpu = Cpu8080::new(&bytecode);
-        cpu.a = 0x2e;
-        cpu.b = 0x6c;
-        cpu.step();
-        assert_eq!(cpu.a, 0x9a);
-        assert_eq!(cpu.flags.cy, false);
-        assert_eq!(cpu.flags.p, true);
-        assert_eq!(cpu.flags.z, false);
-        assert_eq!(cpu.flags.s, true);
+        let mut system = Emulator::new(&bytecode);
+        system.cpu.a = 0x2e;
+        system.cpu.b = 0x6c;
+        system.step();
+        assert_eq!(system.cpu.a, 0x9a);
+        assert_eq!(system.cpu.flags.cy, false);
+        assert_eq!(system.cpu.flags.p, true);
+        assert_eq!(system.cpu.flags.z, false);
+        assert_eq!(system.cpu.flags.s, true);
 
-        cpu.step();
-        assert_eq!(cpu.a, 0x34);
-        assert_eq!(cpu.flags.cy, true);
-        assert_eq!(cpu.flags.p, false);
-        assert_eq!(cpu.flags.z, false);
-        assert_eq!(cpu.flags.s, false);
+        system.step();
+        assert_eq!(system.cpu.a, 0x34);
+        assert_eq!(system.cpu.flags.cy, true);
+        assert_eq!(system.cpu.flags.p, false);
+        assert_eq!(system.cpu.flags.z, false);
+        assert_eq!(system.cpu.flags.s, false);
     }
 
     #[test]
@@ -198,21 +199,21 @@ mod tests {
             0xc6, 0x6c, // ADI 0x6c
             0xc6, 0x9a, // ADI 0x9a
         ];
-        let mut cpu = Cpu8080::new(&bytecode);
-        cpu.a = 0x2e;
-        cpu.step();
-        assert_eq!(cpu.a, 0x9a);
-        assert_eq!(cpu.flags.cy, false);
-        assert_eq!(cpu.flags.p, true);
-        assert_eq!(cpu.flags.z, false);
-        assert_eq!(cpu.flags.s, true);
+        let mut system = Emulator::new(&bytecode);
+        system.cpu.a = 0x2e;
+        system.step();
+        assert_eq!(system.cpu.a, 0x9a);
+        assert_eq!(system.cpu.flags.cy, false);
+        assert_eq!(system.cpu.flags.p, true);
+        assert_eq!(system.cpu.flags.z, false);
+        assert_eq!(system.cpu.flags.s, true);
 
-        cpu.step();
-        assert_eq!(cpu.a, 0x34);
-        assert_eq!(cpu.flags.cy, true);
-        assert_eq!(cpu.flags.p, false);
-        assert_eq!(cpu.flags.z, false);
-        assert_eq!(cpu.flags.s, false);
+        system.step();
+        assert_eq!(system.cpu.a, 0x34);
+        assert_eq!(system.cpu.flags.cy, true);
+        assert_eq!(system.cpu.flags.p, false);
+        assert_eq!(system.cpu.flags.z, false);
+        assert_eq!(system.cpu.flags.s, false);
     }
 
     #[test]
@@ -221,23 +222,23 @@ mod tests {
             0x90, // SUB B
             0x97, // SUB A
         ];
-        let mut cpu = Cpu8080::new(&bytecode); // SUB B
-        cpu.a = 0x49;
-        cpu.b = 0x3a;
-        cpu.step();
-        assert_eq!(cpu.a, 0x0f);
-        assert_eq!(cpu.flags.cy, false);
-        assert_eq!(cpu.flags.p, true);
-        assert_eq!(cpu.flags.z, false);
-        assert_eq!(cpu.flags.s, false);
+        let mut system = Emulator::new(&bytecode); // SUB B
+        system.cpu.a = 0x49;
+        system.cpu.b = 0x3a;
+        system.step();
+        assert_eq!(system.cpu.a, 0x0f);
+        assert_eq!(system.cpu.flags.cy, false);
+        assert_eq!(system.cpu.flags.p, true);
+        assert_eq!(system.cpu.flags.z, false);
+        assert_eq!(system.cpu.flags.s, false);
 
-        cpu.flags.cy = true; //Regression: sub(A) should clear carry bit
-        cpu.step();
-        assert_eq!(cpu.a, 0x00);
-        assert_eq!(cpu.flags.cy, false);
-        assert_eq!(cpu.flags.p, true);
-        assert_eq!(cpu.flags.z, true);
-        assert_eq!(cpu.flags.s, false);
+        system.cpu.flags.cy = true; //Regression: sub(A) should clear carry bit
+        system.step();
+        assert_eq!(system.cpu.a, 0x00);
+        assert_eq!(system.cpu.flags.cy, false);
+        assert_eq!(system.cpu.flags.p, true);
+        assert_eq!(system.cpu.flags.z, true);
+        assert_eq!(system.cpu.flags.s, false);
     }
 
     #[test]
@@ -246,21 +247,21 @@ mod tests {
             0xd6, 0x3a, // SUI 0x3a
             0xd6, 0x0f, // SUI 0x0f
         ];
-        let mut cpu = Cpu8080::new(&bytecode);
-        cpu.a = 0x49;
-        cpu.step();
-        assert_eq!(cpu.a, 0x0f);
-        assert_eq!(cpu.flags.cy, false);
-        assert_eq!(cpu.flags.p, true);
-        assert_eq!(cpu.flags.z, false);
-        assert_eq!(cpu.flags.s, false);
+        let mut system = Emulator::new(&bytecode);
+        system.cpu.a = 0x49;
+        system.step();
+        assert_eq!(system.cpu.a, 0x0f);
+        assert_eq!(system.cpu.flags.cy, false);
+        assert_eq!(system.cpu.flags.p, true);
+        assert_eq!(system.cpu.flags.z, false);
+        assert_eq!(system.cpu.flags.s, false);
 
-        cpu.step();
-        assert_eq!(cpu.a, 0x00);
-        assert_eq!(cpu.flags.cy, false);
-        assert_eq!(cpu.flags.p, true);
-        assert_eq!(cpu.flags.z, true);
-        assert_eq!(cpu.flags.s, false);
+        system.step();
+        assert_eq!(system.cpu.a, 0x00);
+        assert_eq!(system.cpu.flags.cy, false);
+        assert_eq!(system.cpu.flags.p, true);
+        assert_eq!(system.cpu.flags.z, true);
+        assert_eq!(system.cpu.flags.s, false);
     }
 
     #[test]
@@ -269,14 +270,14 @@ mod tests {
             0x0f, // RRC
             0x0f, // RRC
         ];
-        let mut cpu = Cpu8080::new(&bytecode);
-        cpu.a = 0xf2;
-        cpu.step();
-        assert_eq!(cpu.a, 0x79);
-        assert_eq!(cpu.flags.cy, false);
-        cpu.a = 0x11;
-        cpu.step();
-        assert_eq!(cpu.a, 0x88);
-        assert_eq!(cpu.flags.cy, true);
+        let mut system = Emulator::new(&bytecode);
+        system.cpu.a = 0xf2;
+        system.step();
+        assert_eq!(system.cpu.a, 0x79);
+        assert_eq!(system.cpu.flags.cy, false);
+        system.cpu.a = 0x11;
+        system.step();
+        assert_eq!(system.cpu.a, 0x88);
+        assert_eq!(system.cpu.flags.cy, true);
     }
 }
